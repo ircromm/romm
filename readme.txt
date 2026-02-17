@@ -41,7 +41,7 @@ Core modules identified in the project:
 * `downloader` – DAT download support
 * `utils` – helpers
 * `shared_config` – configuration layer
-* `router` – API endpoints
+* `web` – API endpoints
 * `config` – runtime config
 * `run_server()` – server bootstrap
 

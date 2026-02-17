@@ -67,7 +67,7 @@ state = {
 @app.route('/api/fs/list', methods=['POST'])
 def fs_list():
     """List directories and files for the file browser."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     path = data.get('path', '')
     
     # Handle root listing
