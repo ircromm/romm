@@ -91,10 +91,6 @@ def test_myrient_single():
     print(f"     Size: {format_size(test_rom.size)}")
     print(f"     URL: {test_rom.url[:80]}...")
 
-    except Exception as e:
-        print(f"   ERROR: {e}")
-        return None
-
     # Setup download
     with tempfile.TemporaryDirectory() as tmpdir:
         print(f"\n[3] Preparing download to {tmpdir}...")
