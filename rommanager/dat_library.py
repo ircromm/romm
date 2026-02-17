@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from .models import DATInfo
 from .parser import DATParser
 from .shared_config import DATS_DIR, DAT_INDEX_FILE, APP_DATA_DIR
+from .monitor import monitor
 
 
 class DATLibrary:
@@ -27,8 +28,8 @@ class DATLibrary:
             try:
                 with open(DAT_INDEX_FILE, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                monitor.error('dat_library', f'Failed loading DAT index {DAT_INDEX_FILE}: {e}')
         return {}
 
     def _save_index(self):
@@ -64,6 +65,7 @@ class DATLibrary:
             'imported_at': datetime.now().isoformat(),
         }
         self._save_index()
+        monitor.info('dat_library', f'Imported DAT into library: {dest_path}')
 
         return dat_info
 
@@ -96,8 +98,8 @@ class DATLibrary:
                     parent = os.path.dirname(filepath)
                     if parent and os.path.isdir(parent) and not os.listdir(parent):
                         os.rmdir(parent)
-                except Exception:
-                    pass
+                except Exception as e:
+                    monitor.error('dat_library', f'Failed removing DAT file {filepath}: {e}')
             self._save_index()
             return True
         return False

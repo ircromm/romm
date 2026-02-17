@@ -1,341 +1,167 @@
 # ROM Collection Manager v2
 
-Web-Based ROM Organization System
+Sistema para identificação e organização de ROMs com DATs (No-Intro, Redump, TOSEC e formatos Logiqx compatíveis).
 
 ---
 
-## 1. Overview
+## 1. Visão geral
 
-ROM Collection Manager v2 is a **web application** for scanning, identifying, analyzing, and organizing ROM collections using XML-based DAT files.
+O projeto atualmente oferece **três interfaces sobre o mesmo núcleo**:
 
-It supports:
+1. **CLI** (automação e scripts)
+2. **Desktop GUI (tkinter)**
+3. **Web UI (Flask API + React embutido no template HTML)**
 
-* No-Intro
-* Redump
-* TOSEC
-* Any XML-based DAT format (Logiqx-compatible)
+O fluxo principal é o mesmo em todas as interfaces:
 
-The system consists of:
-
-* A **Flask backend**
-* A **React-based frontend**
-* ROM scanning + CRC32 hashing
-* DAT parsing and matching engine
-* Organization strategies with preview and undo
-* Collection completeness analysis
-
-The application runs locally and exposes a web interface.
+1. Carregar um ou mais DATs
+2. Escanear pasta de ROMs (com suporte a ZIP)
+3. Fazer matching por hash
+4. Visualizar identificados / não identificados / faltantes
+5. Organizar (copy/move) com estratégia
+6. (Opcional) gerar relatório e salvar coleção
 
 ---
 
-## 2. Architecture
+## 2. Estado atual da arquitetura
 
-### Backend: Flask Application
+### Núcleo de domínio (reutilizado por CLI/GUI/Web)
 
-Core modules identified in the project:
+- `rommanager/models.py` → dataclasses principais (`ROMInfo`, `ScannedFile`, `DATInfo`, `Collection`, etc.)
+- `rommanager/parser.py` → parser DAT/XML (`.dat`, `.xml`, `.gz`, `.zip`)
+- `rommanager/scanner.py` → scan de arquivos + CRC32 (MD5/SHA1 opcionais)
+- `rommanager/matcher.py` → matching por CRC+size, MD5, SHA1; suporte multi-DAT
+- `rommanager/organizer.py` → preview, organização e undo
+- `rommanager/reporter.py` → relatório de ROMs faltantes (TXT/CSV/JSON)
 
-* `models` – data structures
-* `parser` – DAT XML parsing
-* `scanner` – filesystem ROM scanning + hashing
-* `matcher` – ROM ↔ DAT matching logic
-* `downloader` – DAT download support
-* `utils` – helpers
-* `shared_config` – configuration layer
-* `router` – API endpoints
-* `config` – runtime config
-* `run_server()` – server bootstrap
+### Interfaces
 
-The server starts on:
+- `rommanager/cli.py` → execução via terminal
+- `rommanager/gui.py` → app desktop tkinter
+- `rommanager/web.py` → backend Flask + frontend React em `HTML_TEMPLATE`
+- `rommanager/launcher.py` → launcher gráfico para escolher Desktop/Web
 
-```
-127.0.0.1
-```
+### Persistência e biblioteca
 
-Default Flask configuration uses:
-
-* host
-* port
-* debug
-* threaded
-
-The backend exposes API endpoints consumed by the frontend.
+- `rommanager/collection.py` → save/load de sessões (`.romcol.json`)
+- `rommanager/dat_library.py` → biblioteca local de DATs
+- `rommanager/dat_sources.py` → fontes conhecidas de DAT e download direto (quando `requests` disponível)
+- `rommanager/shared_config.py` → configurações compartilhadas (colunas, cores, estratégias e paths)
 
 ---
 
-### Frontend: React Interface
+## 3. Entradas e execução
 
-Single-page interface rendered into `#root`.
+### Opções principais
 
-Main sections:
-
-1. Identified ROMs
-2. Unidentified Files
-3. Missing ROMs
-4. Organization Controls
-
-UI is styled using Tailwind-like utility classes.
-
----
-
-## 3. Core Functionalities
-
-### 3.1 DAT Loading
-
-* Accepts XML-based DAT files
-* Parses games and ROM entries
-* Extracts metadata:
-
-  * Game name
-  * ROM name
-  * System
-  * Region
-  * Size
-  * CRC32
-
----
-
-### 3.2 ROM Scanning
-
-Scans selected folder and computes:
-
-* File size
-* CRC32 hash
-* Filename
-* Path
-
-Files are matched against loaded DAT entries.
-
----
-
-### 3.3 Matching Results
-
-Results are separated into three logical groups:
-
-#### Identified
-
-ROMs successfully matched against DAT:
-
-Columns shown:
-
-* Original file
-* ROM name
-* Game
-* System
-* Region
-* Size
-* CRC32
-* Status
-
----
-
-#### Unidentified
-
-Files scanned but not matched:
-
-Columns:
-
-* Filename
-* Path
-* Size
-* CRC32
-
-Selectable for further action.
-
----
-
-#### Missing
-
-DAT entries not found in collection.
-
-Includes completeness stats:
-
-* Total in DAT
-* Found count
-* Percentage complete
-* Visual progress bar
-
----
-
-## 4. Organization Engine
-
-User-selectable organization strategies:
-
-| Strategy ID        | Description                           |
-| ------------------ | ------------------------------------- |
-| `system`           | Per-system folders                    |
-| `1g1r`             | 1 Game 1 ROM (best version selection) |
-| `region`           | Region-based folders                  |
-| `alphabetical`     | A-Z folders                           |
-| `emulationstation` | ES / RetroPie layout                  |
-| `flat`             | Rename only (no subfolders)           |
-
----
-
-### Actions
-
-Two file operations supported:
-
-* Copy
-* Move
-
----
-
-### Workflow
-
-1. Load DAT
-2. Scan ROM folder
-3. Review identified / unidentified / missing
-4. Select strategy
-5. Set output folder
-6. Choose Copy or Move
-7. Click:
-
-   * Preview (dry run)
-   * Organize! (execute)
-8. Optional: Undo
-
----
-
-## 5. Organization Controls
-
-UI includes:
-
-* Output folder field
-* Strategy selector
-* Action selector (Copy / Move)
-* Preview button
-* Organize button
-* Undo button
-
-Preview prevents accidental destructive operations.
-
-Undo reverses last organization action.
-
----
-
-## 6. Completeness Tracking
-
-For loaded DAT:
-
-* Total entries in DAT
-* Matched entries
-* Percentage calculation
-* Visual progress bar
-
-This allows tracking full-set completion.
-
----
-
-## 7. Web Server Execution
-
-Entry function:
-
-```
-run_server()
+```bash
+python main.py                 # GUI desktop (fallback para help/aviso se tkinter indisponível)
+python main.py --web           # Web UI local (Flask)
+python main.py --dat ...       # CLI
+python -m rommanager           # launcher/modo automático
+python -m rommanager --help    # ajuda CLI
 ```
 
-Prints:
+### Requisitos práticos
 
-* Host
-* Port
-* URL ([http://127.0.0.1:PORT](http://127.0.0.1:PORT))
-* Stop instruction (Ctrl+C)
+- Python 3.10+
+- Flask para modo web
+- tkinter para GUI desktop
+- `requests` para alguns recursos de download de DAT
 
-The app runs as a local web service.
+Instalação rápida:
 
----
-
-## 8. Intended Use Case
-
-Designed for users who:
-
-* Maintain multi-system ROM collections
-* Use curated DAT sets
-* Want structured organization
-* Want completeness visibility
-* Need deterministic matching (CRC-based)
-
----
-
-## 9. Key Technical Characteristics
-
-* XML-based DAT parsing
-* CRC32 matching
-* Browser-based UI
-* Flask REST backend
-* Modular architecture
-* Strategy-based file output
-* Undo capability
-* Preview safety layer
-
----
-
-## 10. Version Identifier
-
-Displayed in footer:
-
-```
-ROM Collection Manager v2
+```bash
+pip install -r requirements.txt
 ```
 
-Indicates this is a second-generation web-based rewrite, likely replacing a previous CLI or desktop version.
+---
+
+## 4. Estratégias de organização
+
+Suportadas hoje:
+
+- `system`
+- `1g1r`
+- `region`
+- `alphabetical`
+- `emulationstation`
+- `flat`
+
+Também é possível compor estratégias com `+` (ex.: `system+region`).
 
 ---
 
-## 11. Summary
+## 5. Pontos importantes para desenvolvimento
 
-ROM Collection Manager v2 is a local web application that:
-
-* Parses DAT files
-* Scans ROM collections
-* Matches via CRC32
-* Displays identified, unidentified, and missing ROMs
-* Calculates completeness
-* Organizes ROMs using selectable strategies
-* Supports preview and undo
-* Runs via Flask on localhost
-
-It is a full-stack ROM management tool intended for structured archival organization.
+1. **Single source of truth**: regras de negócio estão no núcleo (`parser/scanner/matcher/organizer`) e não nas interfaces.
+2. **Multi-DAT first**: `MultiROMMatcher` é a base para estatísticas por sistema e matching simultâneo.
+3. **Config compartilhada**: ajuste colunas/estratégias em `shared_config.py` para manter GUI/Web coerentes.
+4. **Web atual é monolítico**: API Flask e frontend React estão no mesmo arquivo (`web.py`). Funciona, mas dificulta manutenção de longo prazo.
 
 ---
 
-## 12. Download Engine
+## 6. Podemos começar uma versão mais limpa?
 
-The application downloads ROMs from Myrient (myrient.erista.me) sequentially, one file at a time — matching how a browser downloads files.
+Sim. Não precisa ser “só atualizar documentação”. A atualização de docs é importante, mas já dá para iniciar uma base mais limpa em paralelo com baixo risco.
 
-### Key features:
+### Proposta incremental (v3 clean foundation)
 
-* Single-file sequential downloads (full bandwidth per file)
-* Configurable delay between downloads (0-60 seconds, default: 5s)
-* Streaming CRC32 verification during download
-* Connection pooling with keep-alive for performance
-* Pause, resume, and cancel controls
-* Automatic retry with exponential backoff
+#### Fase 1 — limpeza sem quebrar funcionalidades
 
-### Configuring download delay:
+- Extrair regras de estado global do `web.py` para um módulo de serviço (`services/app_state.py`)
+- Separar rotas Flask por domínio (`routes/scan.py`, `routes/organize.py`, `routes/library.py`, ...)
+- Criar camada de casos de uso (`use_cases/scan_and_match.py`, `use_cases/organize.py`)
+- Padronizar erros/retornos de API (schema simples e consistente)
 
-CLI:
-  python main.py --dat nointro.dat --roms ./roms --download-delay 10
+#### Fase 2 — desacoplamento do frontend web
 
-GUI:
-  Downloads > Download Missing ROMs > "Delay between downloads" spinbox
+- Migrar React embutido para frontend separado (`frontend/`) com build estático
+- Manter Flask servindo API e assets compilados
+- Ganhar versionamento de UI, testes unitários de frontend e PRs mais focados
 
-Web:
-  Download dialog > "Delay between downloads" input field
+#### Fase 3 — qualidade e governança
 
-The delay is a courtesy wait between file completions. During each individual download, the connection runs at full speed with no throttling.
+- Adicionar suíte mínima de testes por domínio (parser/scanner/matcher/organizer)
+- Lint/format/type check no CI
+- Definir convenções de evolução de schema de coleção (`version` + migrações)
+
+### Resultado esperado
+
+- Mudanças menores e mais previsíveis
+- Menor risco de regressão
+- Melhor onboarding para novos contribuidores
+- Base pronta para crescer sem ampliar dívida técnica no mesmo ritmo
 
 ---
 
-## 13. Myrient System Catalog
+## 7. Recomendação prática imediata
 
-The downloader includes a built-in catalog of ~50 systems mapped to their Myrient URLs, covering:
+**Fazer os dois em paralelo:**
 
-* Nintendo (NES, SNES, N64, GB, GBA, DS, 3DS, GameCube, Wii, Wii U)
-* Sony (PS1, PS2, PS3, PSP, Vita)
-* Sega (Master System, Genesis, Saturn, Dreamcast, Game Gear, 32X)
-* Microsoft (Xbox, Xbox 360)
-* Atari (2600, 5200, 7800, Jaguar, Lynx, ST)
-* NEC (PC Engine, SuperGrafx, PC Engine CD, PC-FX)
-* SNK (Neo Geo Pocket, Neo Geo CD)
-* And many more (Commodore, Bandai, Coleco, Panasonic, Sharp, etc.)
+1. **Atualizar documentação** (este arquivo + docs técnicas principais)
+2. **Abrir um “v3 foundation” pequeno** com extração inicial de módulos de serviço/rotas
+
+Isso evita “big-bang rewrite” e melhora a qualidade já no curto prazo.
+
+---
+
+
+## 8. Monitor de atividades (novo)
+
+O app agora possui um monitor central (`rommanager/monitor.py`) para registrar tudo que está acontecendo:
+
+- início/fim de parsing DAT
+- início/fim de scan e erros de arquivos
+- início/fim de organização e undo
+- downloads (início/fim/falhas)
+- operações de coleção e biblioteca
+
+### Onde ver o monitor
+
+- **Desktop GUI**: nova aba **Monitor** com atualização automática em tempo real.
+- **Web**: endpoint `GET /api/monitor?limit=200` e limpeza em `POST /api/monitor/clear`.
+
+Objetivo: evitar falhas silenciosas e dar visibilidade das operações em andamento.
+
+---

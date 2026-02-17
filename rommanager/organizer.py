@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Callable
 
 from .models import ScannedFile, ROMInfo, OrganizationAction, PlannedAction, OrganizationPlan
+from .monitor import monitor
 
 
 # ── Strategy Pattern ──────────────────────────────────────────────
@@ -216,6 +217,7 @@ class Organizer:
         Returns:
             List of performed actions
         """
+        monitor.info('organizer', f'Start organize: strategy={strategy}, action={action}, total_input={len(files)}')
         matched_files = [f for f in files if f.matched_rom is not None]
         if not matched_files:
             return []
@@ -235,13 +237,14 @@ class Organizer:
             try:
                 action_record = self._perform_action(scanned.path, dest, action)
                 actions.append(action_record)
-            except Exception:
-                pass
+            except Exception as e:
+                monitor.error('organizer', f'Failed {action} for {scanned.path} -> {dest}: {e}')
 
             if progress_callback:
                 progress_callback(i + 1, total)
 
         self.history.extend(actions)
+        monitor.info('organizer', f'Organize finished: {len(actions)} actions completed')
         return actions
 
     def preview(self, files: List[ScannedFile], output_dir: str,
@@ -252,6 +255,7 @@ class Organizer:
         Returns:
             OrganizationPlan with planned actions.
         """
+        monitor.info('organizer', f'Preview organize: strategy={strategy}, action={action}, total_input={len(files)}')
         matched_files = [f for f in files if f.matched_rom is not None]
         if not matched_files:
             return OrganizationPlan(strategy_description=strategy)
@@ -318,6 +322,7 @@ class Organizer:
     def undo_last(self) -> bool:
         """Undo the last batch of actions."""
         if not self.history:
+            monitor.warning('organizer', 'Undo requested but no history available')
             return False
 
         last_time = self.history[-1].timestamp
@@ -339,9 +344,10 @@ class Organizer:
                             os.makedirs(src_dir, exist_ok=True)
                         shutil.move(action.destination, action.source)
                         self._remove_empty_dirs(os.path.dirname(action.destination))
-            except Exception:
-                pass
+            except Exception as e:
+                monitor.error('organizer', f'Failed undo action {action.action_type} {action.destination}: {e}')
 
+        monitor.info('organizer', f'Undo finished: {len(to_undo)} actions reverted')
         return True
 
     def _remove_empty_dirs(self, path: str):

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Any
 
 from .models import ROMInfo, DATInfo
+from .monitor import monitor
 
 
 class DATParser:
@@ -27,6 +28,7 @@ class DATParser:
         - Gzipped DAT files (.gz)
         - Zipped DAT files (.zip)
         """
+        monitor.info('parser', f'Parsing DAT: {filepath}')
         content = DATParser._read_file(filepath)
         content = DATParser._clean_content(content)
         root = DATParser._parse_xml(content)
@@ -34,6 +36,7 @@ class DATParser:
         header = DATParser._extract_header(root)
         roms = DATParser._extract_roms(root)
 
+        monitor.info('parser', f'Parsed DAT: {filepath} ({len(roms)} ROMs)')
         return header, roms
 
     @staticmethod
@@ -42,6 +45,7 @@ class DATParser:
         Parse a DAT file and return a DATInfo object and ROM list.
         Each ROM is stamped with dat_id and system_name.
         """
+        monitor.info('parser', f'Parsing DAT with info: {filepath}')
         content = DATParser._read_file(filepath)
         content = DATParser._clean_content(content)
         root = DATParser._parse_xml(content)
@@ -68,6 +72,7 @@ class DATParser:
             rom.dat_id = dat_id
             rom.system_name = system_name
 
+        monitor.info('parser', f'Loaded DAT info: {dat_info.system_name} ({len(roms)} ROMs)')
         return dat_info, roms
 
     @staticmethod

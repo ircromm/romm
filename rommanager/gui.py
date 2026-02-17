@@ -33,6 +33,7 @@ from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
 )
+from .monitor import monitor
 
 try:
     from .myrient_downloader import MyrientDownloader, DownloadProgress, DownloadStatus
@@ -64,6 +65,7 @@ class ROMManagerGUI:
 
         # Search
         self._search_after_id = None
+        self._monitor_last_count = 0
 
         # Sort state for each tree
         self.sort_state = {
@@ -76,6 +78,7 @@ class ROMManagerGUI:
         self._setup_theme()
         self._build_menu()
         self._build_ui()
+        self._poll_monitor()
 
     # ── Theme ─────────────────────────────────────────────────────
 
@@ -255,6 +258,16 @@ class ROMManagerGUI:
         self.ms_tree = self._make_tree(ms_f, MISSING_COLUMNS)
         self._setup_region_tags(self.ms_tree)
 
+        # Monitor
+        mon_f = ttk.Frame(self.notebook)
+        self.notebook.add(mon_f, text="Monitor")
+        self.monitor_text = tk.Text(mon_f, height=10, bg=self.colors['surface'],
+                                    fg=self.colors['fg'], font=('Consolas', 9))
+        self.monitor_text.pack(fill=tk.BOTH, expand=True)
+        mon_btn = ttk.Frame(mon_f)
+        mon_btn.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(mon_btn, text="Clear Monitor", command=self._clear_monitor).pack(side=tk.RIGHT)
+
         # Bind selection change events to update selection count
         self.ms_tree.bind('<<Change>>', self._update_ms_selection_count)
         self.ms_tree.bind('<Button-1>', lambda e: self.root.after(10, self._update_ms_selection_count))
@@ -324,6 +337,30 @@ class ROMManagerGUI:
         # Bind right-click for context menu
         tree.bind('<Button-3>', lambda e: self._show_context_menu(e, tree))
         return tree
+
+
+    def _clear_monitor(self):
+        monitor.clear()
+        monitor.info('gui', 'Monitor limpo pelo usuário')
+        self.monitor_text.delete('1.0', tk.END)
+        self._monitor_last_count = 0
+
+    def _poll_monitor(self):
+        try:
+            events = monitor.get_events(2000)
+            total = len(events)
+            if total < self._monitor_last_count:
+                self.monitor_text.delete('1.0', tk.END)
+                self._monitor_last_count = 0
+
+            if total > self._monitor_last_count:
+                for e in events[self._monitor_last_count:]:
+                    line = f"[{e['timestamp']}] {e['level']:<7} [{e['source']}] {e['message']}\n"
+                    self.monitor_text.insert(tk.END, line)
+                self.monitor_text.see(tk.END)
+                self._monitor_last_count = total
+        finally:
+            self.root.after(500, self._poll_monitor)
 
     def _setup_region_tags(self, tree):
         for region, colors in REGION_COLORS.items():
@@ -701,6 +738,7 @@ class ROMManagerGUI:
         self.unidentified.clear()
         for t in [self.id_tree, self.un_tree, self.ms_tree]:
             t.delete(*t.get_children())
+        monitor.info('gui', f'Scan solicitado: {folder}')
         thread = threading.Thread(target=self._scan_worker, args=(folder,), daemon=True)
         thread.start()
 
@@ -718,10 +756,11 @@ class ROMManagerGUI:
                         self._process(sc)
                 else:
                     self._process(FileScanner.scan_file(fp))
-            except Exception:
-                pass
+            except Exception as e:
+                monitor.error('gui', f'Erro ao escanear {fp}: {e}')
             pct = int((i + 1) / total * 100) if total else 0
             self.root.after(0, lambda p=pct, c=i+1, t=total: self._prog(p, c, t))
+        monitor.info('gui', f'Scan finalizado: {len(self.scanned_files)} arquivos processados')
         self.root.after(0, self._scan_done)
 
     def _process(self, sc):
@@ -1141,6 +1180,7 @@ class ROMManagerGUI:
 
         total_size = sum(r.size for r in to_download)
         msg = f"Download {len(to_download)} selected ROM(s)?\n\nTotal size: {format_size(total_size)}"
+        monitor.info('gui', f'Download selecionado iniciado: {len(to_download)} ROMs')
         self._start_download_flow(to_download, msg)
 
     def _download_missing_dialog(self):
@@ -1156,6 +1196,7 @@ class ROMManagerGUI:
             return
         total_size = sum(r.size for r in all_missing)
         msg = f"Download {len(all_missing):,} missing ROM(s)?\n\nTotal size: {format_size(total_size)}"
+        monitor.info('gui', f'Download de faltantes iniciado: {len(all_missing)} ROMs')
         self._start_download_flow(all_missing, msg)
 
     def _start_download_flow(self, roms_to_download, confirm_msg):

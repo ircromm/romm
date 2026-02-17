@@ -6,6 +6,8 @@ import os
 import webbrowser
 from typing import Callable, Dict, List, Optional
 
+from .monitor import monitor
+
 try:
     import requests
     REQUESTS_AVAILABLE = True
@@ -86,9 +88,11 @@ class DATSourceManager:
             Path to downloaded file, or None on failure.
         """
         if not REQUESTS_AVAILABLE:
+            monitor.error('dat_sources', 'Download requested but requests is unavailable')
             return None
 
         try:
+            monitor.info('dat_sources', f'Starting DAT download: {url}')
             os.makedirs(dest_folder, exist_ok=True)
 
             resp = requests.get(url, stream=True, timeout=30)
@@ -114,8 +118,10 @@ class DATSourceManager:
                         if progress_callback:
                             progress_callback(downloaded, total_size)
 
+            monitor.info('dat_sources', f'DAT download finished: {dest_path}')
             return dest_path
-        except Exception:
+        except Exception as e:
+            monitor.error('dat_sources', f'DAT download failed: {url} ({e})')
             return None
 
     def list_libretro_dats(self) -> List[Dict]:
@@ -124,6 +130,7 @@ class DATSourceManager:
         Returns list of dicts with: name, url, system.
         """
         if not REQUESTS_AVAILABLE:
+            monitor.error('dat_sources', 'Libretro listing requested but requests is unavailable')
             return []
 
         try:
@@ -144,6 +151,8 @@ class DATSourceManager:
                         'size': f.get('size', 0),
                     })
 
+            monitor.info('dat_sources', f'Loaded Libretro DAT list ({len(dats)} items)')
             return sorted(dats, key=lambda d: d['system'])
-        except Exception:
+        except Exception as e:
+            monitor.error('dat_sources', f'Failed loading Libretro DAT list: {e}')
             return []

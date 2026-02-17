@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 
 from .models import Collection, DATInfo, ScannedFile
 from .shared_config import COLLECTIONS_DIR, RECENT_FILE, APP_DATA_DIR
+from .monitor import monitor
 
 
 class CollectionManager:
@@ -35,6 +36,7 @@ class CollectionManager:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         self.add_to_recent(filepath, collection.name)
+        monitor.info('collection', f'Collection saved: {filepath}')
         return filepath
 
     def load(self, filepath: str) -> Collection:
@@ -44,6 +46,7 @@ class CollectionManager:
 
         collection = Collection.from_dict(data)
         self.add_to_recent(filepath, collection.name)
+        monitor.info('collection', f'Collection loaded: {filepath}')
         return collection
 
     def list_saved(self) -> List[Dict]:
@@ -67,8 +70,8 @@ class CollectionManager:
                         'identified_count': len(data.get('identified', [])),
                         'unidentified_count': len(data.get('unidentified', [])),
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    monitor.error('collection', f'Failed reading collection metadata {filepath}: {e}')
 
         collections.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
         return collections
@@ -79,8 +82,8 @@ class CollectionManager:
             if os.path.exists(filepath):
                 os.remove(filepath)
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            monitor.error('collection', f'Failed deleting collection {filepath}: {e}')
         return False
 
     def get_recent(self, limit: int = 10) -> List[Dict]:
@@ -93,7 +96,8 @@ class CollectionManager:
             # Filter out entries where the file no longer exists
             recent = [r for r in recent if os.path.exists(r.get('filepath', ''))]
             return recent[:limit]
-        except Exception:
+        except Exception as e:
+            monitor.error('collection', f'Failed reading recent collections: {e}')
             return []
 
     def add_to_recent(self, filepath: str, name: str) -> None:

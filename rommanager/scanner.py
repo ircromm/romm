@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Callable, Optional
 
 from .models import ScannedFile
+from .monitor import monitor
 
 
 class FileScanner:
@@ -72,6 +73,7 @@ class FileScanner:
         Uses CRC from ZIP header for instant identification (no need to decompress).
         """
         results = []
+        monitor.info('scanner', f'Scanning archive contents: {filepath}')
         
         try:
             with zipfile.ZipFile(filepath, 'r') as zf:
@@ -91,10 +93,11 @@ class FileScanner:
                         sha1=""
                     ))
         except zipfile.BadZipFile:
-            pass
-        except Exception:
-            pass
+            monitor.warning('scanner', f'Invalid ZIP skipped: {filepath}')
+        except Exception as e:
+            monitor.error('scanner', f'Failed reading ZIP {filepath}: {e}')
         
+        monitor.info('scanner', f'Finished archive scan: {filepath} ({len(results)} entries)')
         return results
     
     @staticmethod
@@ -159,6 +162,7 @@ class FileScanner:
         Returns:
             List of ScannedFile objects
         """
+        monitor.info('scanner', f'Starting folder scan: {folder} (recursive={recursive}, archives={scan_archives})')
         files = FileScanner.collect_files(folder, recursive, scan_archives)
         results = []
         total = len(files)
@@ -177,10 +181,10 @@ class FileScanner:
                     results.append(scanned)
                     
             except Exception as e:
-                # Skip files that can't be read
-                pass
+                monitor.error('scanner', f'Failed scanning file {filepath}: {e}')
             
             if progress_callback:
                 progress_callback(i + 1, total)
         
+        monitor.info('scanner', f'Finished folder scan: {len(results)} scanned entries')
         return results

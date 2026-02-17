@@ -29,6 +29,7 @@ from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
 )
+from .monitor import monitor
 
 try:
     from .downloader import ArchiveOrgDownloader
@@ -245,6 +246,8 @@ def start_scan():
     if state['scanning']:
         return jsonify({'error': 'Scan already in progress'}), 400
 
+    monitor.info('web', f'Scan requested for folder: {folder}')
+
     thread = threading.Thread(
         target=_scan_thread,
         args=(folder, scan_archives, recursive)
@@ -257,6 +260,7 @@ def start_scan():
 
 def _scan_thread(folder, scan_archives, recursive):
     state['scanning'] = True
+    monitor.info('web', f'Scan thread started: {folder}')
     state['identified'] = []
     state['unidentified'] = []
     state['scan_progress'] = 0
@@ -274,11 +278,12 @@ def _scan_thread(folder, scan_archives, recursive):
                 else:
                     scanned = FileScanner.scan_file(filepath)
                     _process_scanned(scanned)
-            except Exception:
-                pass
+            except Exception as e:
+                monitor.error('web', f'Failed scanning path {filepath}: {e}')
             state['scan_progress'] = i + 1
     finally:
         state['scanning'] = False
+        monitor.info('web', f"Scan thread finished: identified={len(state['identified'])}, unidentified={len(state['unidentified'])}")
 
 
 def _process_scanned(scanned):
@@ -379,6 +384,7 @@ def preview_organize():
         return jsonify({'error': 'No identified ROMs'}), 400
 
     try:
+        monitor.info('web', f'Preview requested: strategy={strategy}, action={action}, output={output}')
         plan = state['organizer'].preview(state['identified'], output, strategy, action)
         actions = [{'source': a.source, 'destination': a.destination, 'action': a.action_type}
                    for a in plan.actions]
@@ -406,6 +412,7 @@ def organize():
         return jsonify({'error': 'No identified ROMs'}), 400
 
     try:
+        monitor.info('web', f'Organize requested: strategy={strategy}, action={action}, output={output}')
         actions = state['organizer'].organize(
             state['identified'], output, strategy, action
         )
@@ -668,6 +675,8 @@ def myrient_download_missing():
     if not to_download:
         return jsonify({'error': 'No missing ROMs to download'}), 400
 
+    monitor.info('web', f'Myrient missing download requested: {len(to_download)} ROMs -> {dest_folder}')
+
     dl_state['log'] = []
     dl_state['active'] = True
     dl_state['progress'] = None
@@ -854,6 +863,26 @@ def get_config():
         'myrient_available': MYRIENT_AVAILABLE,
     })
 
+
+
+
+# ── Monitor ─────────────────────────────────────────────────────
+
+@app.route('/api/monitor')
+def monitor_events():
+    try:
+        limit = int(request.args.get('limit', 200))
+    except Exception:
+        limit = 200
+    limit = max(10, min(2000, limit))
+    return jsonify({'events': monitor.get_events(limit)})
+
+
+@app.route('/api/monitor/clear', methods=['POST'])
+def clear_monitor_events():
+    monitor.clear()
+    monitor.info('web', 'Monitor log cleared from Web API')
+    return jsonify({'success': True})
 
 # ── HTML Template ──────────────────────────────────────────────
 

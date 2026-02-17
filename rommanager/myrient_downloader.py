@@ -29,6 +29,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from .models import ROMInfo
+from .monitor import monitor
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -387,8 +388,8 @@ class MyrientDownloader:
             resp = self.session.head(possible_url, timeout=self.timeout, allow_redirects=True)
             if resp.status_code == 200:
                 return possible_url
-        except Exception:
-            pass
+        except Exception as e:
+            monitor.error('myrient', f'Failed checking ROM URL for {rom.name}: {e}')
         return None
 
     # ── Download Queue ─────────────────────────────────────────
@@ -458,6 +459,7 @@ class MyrientDownloader:
         self._pause_flag = False
 
         download_delay = max(0, min(60, download_delay))
+        monitor.info('myrient', f'Starting download queue: {len(self._queue)} files (delay={download_delay}s)')
 
         progress = DownloadProgress(total_count=len(self._queue))
 
@@ -494,6 +496,7 @@ class MyrientDownloader:
             try:
                 self._download_file(task, progress, progress_callback)
             except Exception as e:
+                monitor.error('myrient', f'Download failed for {task.rom_name}: {e}')
                 task.status = DownloadStatus.FAILED
                 task.error = str(e)
                 progress.failed += 1
@@ -525,6 +528,7 @@ class MyrientDownloader:
             progress.current_index = progress.completed + progress.failed + progress.cancelled
             self._safe_callback(progress, progress_callback)
 
+        monitor.info('myrient', f'Download queue finished: completed={progress.completed}, failed={progress.failed}, cancelled={progress.cancelled}')
         return progress
 
     def cancel(self):
@@ -615,6 +619,6 @@ class MyrientDownloader:
                     
                     largest = max(infos, key=lambda i: i.file_size)
                     return f"{largest.CRC:08x}"
-        except Exception:
-            pass
+        except Exception as e:
+            monitor.error('myrient', f'Failed checking inner ZIP CRC for {filepath}: {e}')
         return None

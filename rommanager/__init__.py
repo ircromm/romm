@@ -18,6 +18,7 @@ from .organizer import Organizer, build_strategy
 from .utils import format_size, truncate_string, safe_filename
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
+from .monitor import monitor
 
 try:
     from .myrient_downloader import MyrientDownloader
@@ -44,6 +45,7 @@ __all__ = [
     'truncate_string',
     'safe_filename',
     'MyrientDownloader',
+    'monitor',
 ]
 
 def run_web(host='127.0.0.1', port=5000):
