@@ -14,6 +14,7 @@ import os
 import time
 import zlib
 import zipfile
+import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 from html.parser import HTMLParser
@@ -29,6 +30,7 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from .models import ROMInfo
+from .monitor import log_event
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -340,7 +342,8 @@ class MyrientDownloader:
         try:
             resp = self.session.get(url, timeout=self.timeout)
             resp.raise_for_status()
-        except Exception:
+        except Exception as e:
+            log_event('download.list.error', f'Failed listing URL {url}: {e}', logging.ERROR)
             return []
 
         parser = _DirectoryParser()
@@ -387,8 +390,8 @@ class MyrientDownloader:
             resp = self.session.head(possible_url, timeout=self.timeout, allow_redirects=True)
             if resp.status_code == 200:
                 return possible_url
-        except Exception:
-            pass
+        except Exception as e:
+            log_event('download.lookup.error', f'HEAD failed for {possible_url}: {e}', logging.ERROR)
         return None
 
     # ── Download Queue ─────────────────────────────────────────
@@ -416,6 +419,7 @@ class MyrientDownloader:
             system_name=system_name,
         )
         self._queue.append(task)
+        log_event('download.queue.add', f'Queued {filename} -> {dest}')
         return task
 
     def queue_missing_roms(self, missing_roms: List[ROMInfo],
@@ -465,6 +469,7 @@ class MyrientDownloader:
             if self._cancel_flag:
                 task.status = DownloadStatus.CANCELLED
                 progress.cancelled += 1
+                log_event('download.cancelled', f'Cancelled before start: {task.rom_name}')
                 self._safe_callback(progress, progress_callback)
                 continue
 
@@ -489,6 +494,7 @@ class MyrientDownloader:
 
             task.status = DownloadStatus.DOWNLOADING
             progress.current_task = task
+            log_event('download.start', f'Starting download: {task.rom_name}')
             self._safe_callback(progress, progress_callback)
 
             try:
@@ -497,6 +503,7 @@ class MyrientDownloader:
                 task.status = DownloadStatus.FAILED
                 task.error = str(e)
                 progress.failed += 1
+                log_event('download.failed', f'Failed {task.rom_name}: {e}', logging.ERROR)
                 self._safe_callback(progress, progress_callback)
                 continue
 
@@ -509,18 +516,22 @@ class MyrientDownloader:
                 if actual_crc.lower() == task.expected_crc.lower():
                     task.status = DownloadStatus.COMPLETE
                     progress.completed += 1
+                    log_event('download.complete', f'Completed {task.rom_name}')
                 else:
                     inner_crc = self._check_inner_zip_crc(task.dest_path, task.expected_crc)
                     if inner_crc and inner_crc.lower() == task.expected_crc.lower():
                         task.status = DownloadStatus.COMPLETE
                         progress.completed += 1
+                        log_event('download.complete', f'Completed {task.rom_name} (inner ZIP CRC ok)')
                     else:
                         task.status = DownloadStatus.CRC_MISMATCH
                         task.error = f"CRC mismatch: expected {task.expected_crc}, got {actual_crc}"
                         progress.failed += 1
+                        log_event('download.crc_mismatch', f'{task.rom_name}: {task.error}', logging.ERROR)
             else:
                 task.status = DownloadStatus.COMPLETE
                 progress.completed += 1
+                log_event('download.complete', f'Completed {task.rom_name}')
 
             progress.current_index = progress.completed + progress.failed + progress.cancelled
             self._safe_callback(progress, progress_callback)
@@ -529,12 +540,15 @@ class MyrientDownloader:
 
     def cancel(self):
         self._cancel_flag = True
+        log_event('download.cancel.requested', 'Cancel requested by user')
 
     def pause(self):
         self._pause_flag = True
+        log_event('download.pause', 'Pause requested by user')
 
     def resume(self):
         self._pause_flag = False
+        log_event('download.resume', 'Resume requested by user')
 
     # ── Internal ───────────────────────────────────────────────
 
@@ -567,6 +581,7 @@ class MyrientDownloader:
             for chunk in resp.iter_content(chunk_size=chunk_size):
                 if self._cancel_flag:
                     task.status = DownloadStatus.CANCELLED
+                    log_event('download.cancelled', f'Cancelled during transfer: {task.rom_name}')
                     return
 
                 while self._pause_flag and not self._cancel_flag:
@@ -615,6 +630,6 @@ class MyrientDownloader:
                     
                     largest = max(infos, key=lambda i: i.file_size)
                     return f"{largest.CRC:08x}"
-        except Exception:
-            pass
+        except Exception as e:
+            log_event('download.crc.error', f'Failed to inspect ZIP CRC {filepath}: {e}', logging.ERROR)
         return None
