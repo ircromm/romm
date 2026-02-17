@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(wc:*)",
+      "WebFetch(domain:r-roms.github.io)",
+      "WebFetch(domain:myrient.erista.me)",
+      "Bash(python:*)",
+      "Bash(find:*)",
+      "Bash(ls \"D:\\\\1 romm\\\\APP\\\\docs\\\\plans\"\" 2>/dev/null || echo \"Directory does not exist \")",
+      "Bash(findstr:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

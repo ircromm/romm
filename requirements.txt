@@ -1,0 +1,12 @@
+# ROM Manager Requirements
+
+# Web interface (optional)
+flask>=2.0.0
+
+# HTTP requests for downloads and DAT sources (optional but recommended)
+requests>=2.28.0
+
+# Note: tkinter is usually included with Python
+# If not available, install python3-tk on Linux:
+#   sudo apt install python3-tk
+# On Windows, reinstall Python with tkinter option checked

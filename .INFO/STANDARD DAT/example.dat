@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Example Console - Games</name>
+		<description>Example Console - Games (20240115)</description>
+		<version>20240115</version>
+		<author>ROM Manager</author>
+		<homepage>https://github.com/example</homepage>
+	</header>
+	<game name="Super Adventure (USA)">
+		<description>Super Adventure (USA)</description>
+		<rom name="Super Adventure (USA).bin" size="524288" crc="a1b2c3d4" md5="e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" sha1="1a2b3c4d5e6f7890abcdef1234567890abcdef12"/>
+	</game>
+	<game name="Super Adventure (Europe)">
+		<description>Super Adventure (Europe)</description>
+		<rom name="Super Adventure (Europe).bin" size="524288" crc="b2c3d4e5" md5="f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1" sha1="2b3c4d5e6f7890abcdef1234567890abcdef1234"/>
+	</game>
+	<game name="Super Adventure (Japan)">
+		<description>Super Adventure (Japan)</description>
+		<rom name="Super Adventure (Japan).bin" size="524288" crc="c3d4e5f6" md5="a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2" sha1="3c4d5e6f7890abcdef1234567890abcdef123456"/>
+	</game>
+	<game name="Racing Champion (USA)">
+		<description>Racing Champion (USA)</description>
+		<rom name="Racing Champion (USA).bin" size="1048576" crc="d4e5f6a7" md5="b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3" sha1="4d5e6f7890abcdef1234567890abcdef12345678"/>
+	</game>
+	<game name="Racing Champion (Europe)">
+		<description>Racing Champion (Europe)</description>
+		<rom name="Racing Champion (Europe).bin" size="1048576" crc="e5f6a7b8" md5="c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4" sha1="5e6f7890abcdef1234567890abcdef1234567890"/>
+	</game>
+	<game name="Puzzle Master (World)">
+		<description>Puzzle Master (World)</description>
+		<rom name="Puzzle Master (World).bin" size="262144" crc="f6a7b8c9" md5="d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5" sha1="6f7890abcdef1234567890abcdef123456789012"/>
+	</game>
+	<game name="Action Hero (USA) (Rev 1)">
+		<description>Action Hero (USA) (Rev 1)</description>
+		<rom name="Action Hero (USA) (Rev 1).bin" size="2097152" crc="a7b8c9d0" md5="e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6" sha1="7890abcdef1234567890abcdef12345678901234"/>
+	</game>
+	<game name="Action Hero (USA)">
+		<description>Action Hero (USA)</description>
+		<rom name="Action Hero (USA).bin" size="2097152" crc="b8c9d0e1" md5="f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7" sha1="890abcdef1234567890abcdef123456789012345"/>
+	</game>
+	<game name="Sports Game 2024 (USA)">
+		<description>Sports Game 2024 (USA)</description>
+		<rom name="Sports Game 2024 (USA).bin" size="4194304" crc="c9d0e1f2" md5="a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8" sha1="90abcdef1234567890abcdef1234567890123456"/>
+	</game>
+	<game name="RPG Quest (Japan)">
+		<description>RPG Quest (Japan)</description>
+		<rom name="RPG Quest (Japan).bin" size="8388608" crc="d0e1f2a3" md5="b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9" sha1="0abcdef1234567890abcdef12345678901234567"/>
+	</game>
+</datafile>
