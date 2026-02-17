@@ -5,6 +5,7 @@ Command-line interface for ROM Manager
 import argparse
 import sys
 import os
+import logging
 
 from .parser import DATParser
 from .scanner import FileScanner
@@ -13,6 +14,7 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
+from .monitor import setup_monitoring, log_event, tail_events
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -103,6 +105,24 @@ Examples:
     )
 
     cli_group.add_argument(
+        '--monitor',
+        action='store_true',
+        help='Enable realtime monitoring output while the app runs'
+    )
+
+    cli_group.add_argument(
+        '--monitor-file',
+        type=str,
+        help='Custom monitor log file path (default: ~/.rommanager/events.log)'
+    )
+
+    cli_group.add_argument(
+        '--monitor-tail',
+        action='store_true',
+        help='Tail monitor logs in realtime (no scan/organize action)'
+    )
+
+    cli_group.add_argument(
         '--dry-run',
         action='store_true',
         help='Preview what organization would do without executing'
@@ -155,6 +175,14 @@ def run_cli(args=None):
     parser = create_parser()
     args = parser.parse_args(args)
 
+    setup_monitoring(log_file=args.monitor_file, echo=args.monitor)
+
+    if args.monitor_tail:
+        tail_events(log_file=args.monitor_file)
+        return 0
+
+    log_event('cli.start', 'CLI execution started')
+
     # Handle load-collection mode
     if args.load_collection:
         return _load_collection_mode(args)
@@ -162,11 +190,13 @@ def run_cli(args=None):
     # Check if user tried to run CLI mode without required args
     if not (args.web or args.gui):
         if not args.dat or not args.roms:
+            log_event('cli.error', 'Missing required arguments: --dat and --roms', logging.ERROR)
             parser.print_help()
             print("\nError: --dat and --roms are required for CLI mode.")
             return 1
         # --output is required unless just doing --report
         if not args.output and not args.report:
+            log_event('cli.error', 'Missing required argument: --output', logging.ERROR)
             parser.print_help()
             print("\nError: --output is required for organizing (or use --report).")
             return 1
@@ -186,7 +216,9 @@ def run_cli(args=None):
 
     for dat_path in args.dat:
         log(f"\nLoading DAT: {dat_path}")
+        log_event('dat.load.start', f'Loading DAT: {dat_path}')
         if not os.path.exists(dat_path):
+            log_event('dat.load.error', f'DAT file not found: {dat_path}', logging.ERROR)
             print(f"Error: DAT file not found: {dat_path}", file=sys.stderr)
             return 1
 
@@ -194,9 +226,11 @@ def run_cli(args=None):
             dat_info, roms = DATParser.parse_with_info(dat_path)
             multi_matcher.add_dat(dat_info, roms)
             all_dat_infos.append(dat_info)
+            log_event('dat.load.done', f'Loaded DAT {dat_info.system_name} ({dat_info.rom_count} ROMs)')
             log(f"   System: {dat_info.system_name}")
             log(f"   ROMs in database: {dat_info.rom_count:,}")
         except Exception as e:
+            log_event('dat.load.error', f'Failed to load DAT {dat_path}: {e}', logging.ERROR)
             print(f"Error: Failed to load DAT file: {e}", file=sys.stderr)
             return 1
 
@@ -207,6 +241,7 @@ def run_cli(args=None):
     # Scan files
     log(f"\nScanning: {args.roms}")
     if not os.path.exists(args.roms):
+        log_event('scan.error', f'ROM folder not found: {args.roms}', logging.ERROR)
         print(f"Error: ROM folder not found: {args.roms}", file=sys.stderr)
         return 1
 
@@ -217,6 +252,7 @@ def run_cli(args=None):
         if not quiet:
             print(f"   Scanning: {current:,} / {total:,}...", end='\r')
 
+    log_event('scan.start', f'Scanning folder: {args.roms}')
     scanned_files = FileScanner.scan_folder(
         args.roms,
         recursive=recursive,
@@ -228,9 +264,11 @@ def run_cli(args=None):
         print()
 
     log(f"   Found {len(scanned_files):,} files")
+    log_event('scan.done', f'Found {len(scanned_files)} files')
 
     # Match files
     identified, unidentified = multi_matcher.match_all(scanned_files)
+    log_event('match.done', f'Identified={len(identified)} Unidentified={len(unidentified)}')
 
     total = len(identified) + len(unidentified)
     percent = (len(identified) / total * 100) if total > 0 else 0
@@ -268,6 +306,7 @@ def run_cli(args=None):
 
     # Dry-run mode
     if args.dry_run:
+        log_event('organize.dry_run', 'Dry-run preview requested')
         return _dry_run(args, identified, log)
 
     # Organize
@@ -277,6 +316,7 @@ def run_cli(args=None):
     log(f"   Output: {args.output}")
 
     organizer = Organizer()
+    log_event('organize.start', f'Strategy={args.strategy} Action={args.action} Output={args.output}')
 
     def org_progress(current, total):
         if not quiet:
@@ -294,6 +334,7 @@ def run_cli(args=None):
         print()
 
     log(f"\nDone! Organized {len(actions):,} ROMs")
+    log_event('organize.done', f'Organized {len(actions)} ROMs')
 
     # Save collection if requested
     if args.save_collection:
