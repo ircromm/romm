@@ -3,6 +3,7 @@ Internet Archive downloader - search and download ROMs from archive.org.
 """
 
 import os
+import re
 import time
 from typing import Callable, Dict, List, Optional
 
@@ -13,6 +14,9 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from .models import ROMInfo
+
+
+PARENTHETICAL_SUFFIX_RE = re.compile(r'\s*\([^)]*\)')
 
 
 class ArchiveOrgDownloader:
@@ -220,8 +224,7 @@ class ArchiveOrgDownloader:
             # Use game_name for broader search, fall back to rom name
             search_term = rom.game_name if rom.game_name else rom.name
             # Clean search term (remove parenthetical info)
-            import re
-            clean_term = re.sub(r'\s*\([^)]*\)', '', search_term).strip()
+            clean_term = PARENTHETICAL_SUFFIX_RE.sub('', search_term).strip()
 
             if clean_term:
                 docs = self.search(clean_term, rom.system_name, max_results=5)
