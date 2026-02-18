@@ -1205,7 +1205,7 @@ class ROMManagerGUI:
         delay_row = ttk.Frame(delay_frame)
         delay_row.pack(fill=tk.X)
         ttk.Label(delay_row, text="Delay between downloads (seconds):").pack(side=tk.LEFT)
-        delay_var = tk.IntVar(value=5)
+        delay_var = tk.IntVar(value=0)
         delay_spin = ttk.Spinbox(delay_row, from_=0, to=60, textvariable=delay_var, width=5)
         delay_spin.pack(side=tk.LEFT, padx=(8, 0))
 
