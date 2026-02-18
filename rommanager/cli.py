@@ -94,8 +94,8 @@ Examples:
     cli_group.add_argument(
         '--download-delay', '-dd',
         type=int,
-        default=5,
-        help='Seconds to wait between downloads (0-60, default: 5)'
+        default=0,
+        help='Seconds to wait between downloads (0-60, default: 0)'
     )
 
     cli_group.add_argument(

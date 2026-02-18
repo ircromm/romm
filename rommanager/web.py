@@ -649,7 +649,11 @@ def myrient_download_missing():
     data = request.get_json()
     dest_folder = data.get('dest_folder', '')
     selected_names = data.get('selected_names', [])  # empty = all missing
-    download_delay = max(0, min(60, int(data.get('download_delay', 5))))
+    download_delay = max(0, min(60, int(data.get('download_delay', 0))))
+    download_mode = data.get('download_mode', 'sequential')
+    if download_mode not in ('sequential', 'fast'):
+        download_mode = 'sequential'
+    download_workers = max(2, min(8, int(data.get('download_workers', 3))))
 
     if not dest_folder or not os.path.isdir(dest_folder):
         return jsonify({'error': 'Invalid destination folder'}), 400
@@ -701,7 +705,12 @@ def myrient_download_missing():
                     'current_status': prog.current_task.status.name if prog.current_task else '',
                 }
 
-            result = dl.start_downloads(on_progress, download_delay=download_delay)
+            result = dl.start_downloads(
+                on_progress,
+                download_delay=download_delay,
+                mode=download_mode,
+                max_workers=download_workers,
+            )
             dl_state['log'].append(
                 f"DONE: {result.completed} downloaded, {result.failed} failed, {result.cancelled} cancelled")
         except Exception as e:
@@ -727,7 +736,11 @@ def myrient_download_files():
     data = request.get_json()
     dest_folder = data.get('dest_folder', '')
     files = data.get('files', [])  # [{name, url}]
-    download_delay = max(0, min(60, int(data.get('download_delay', 5))))
+    download_delay = max(0, min(60, int(data.get('download_delay', 0))))
+    download_mode = data.get('download_mode', 'sequential')
+    if download_mode not in ('sequential', 'fast'):
+        download_mode = 'sequential'
+    download_workers = max(2, min(8, int(data.get('download_workers', 3))))
 
     if not dest_folder or not os.path.isdir(dest_folder):
         return jsonify({'error': 'Invalid destination folder'}), 400
@@ -759,7 +772,12 @@ def myrient_download_files():
                     'current_status': prog.current_task.status.name if prog.current_task else '',
                 }
 
-            result = dl.start_downloads(on_progress, download_delay=download_delay)
+            result = dl.start_downloads(
+                on_progress,
+                download_delay=download_delay,
+                mode=download_mode,
+                max_workers=download_workers,
+            )
             dl_state['log'].append(
                 f"DONE: {result.completed} downloaded, {result.failed} failed")
         except Exception as e:
@@ -1051,7 +1069,9 @@ HTML_TEMPLATE = r'''
             const [dlProgress, setDlProgress] = useState(null);
             const [dlActive, setDlActive] = useState(false);
             const [dlLog, setDlLog] = useState([]);
-            const [dlDelay, setDlDelay] = useState(5);
+            const [dlDelay, setDlDelay] = useState(0);
+            const [dlMode, setDlMode] = useState('sequential');
+            const [dlWorkers, setDlWorkers] = useState(3);
             const dlPollRef = useRef(null);
 
             const notify = (type, message) => {
@@ -1257,7 +1277,7 @@ HTML_TEMPLATE = r'''
 
             const downloadMyrientFiles = async (files, dest) => {
                 setShowDownloadDialog(true);
-                const res = await api.post('/api/myrient/download-files', { dest_folder: dest, files, download_delay: dlDelay });
+                const res = await api.post('/api/myrient/download-files', { dest_folder: dest, files, download_delay: dlDelay, download_mode: dlMode, download_workers: dlWorkers });
                 if (res.error) { notify('error', res.error); return; }
                 notify('success', `Queued ${files.length} files for download`);
                 startDlPoll();
@@ -1272,6 +1292,8 @@ HTML_TEMPLATE = r'''
                     dest_folder: dest,
                     selected_names: selectedNames,
                     download_delay: dlDelay,
+                    download_mode: dlMode,
+                    download_workers: dlWorkers,
                 });
                 if (res.error) { notify('error', res.error); return; }
                 notify('success', `Resolving ${res.queuing} ROMs...`);
@@ -1521,11 +1543,22 @@ HTML_TEMPLATE = r'''
                                         <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm">Browse</button>
                                     </div>
                                 </div>
-                                <div>
+                                <div className="flex items-center gap-3 flex-wrap">
                                     <label className="text-sm text-slate-400">Delay between downloads (seconds):</label>
                                     <input type="number" min="0" max="60" value={dlDelay} onChange={e => setDlDelay(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))}
                                         disabled={dlActive}
-                                        className="mt-1 ml-2 w-20 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50" />
+                                        className="w-20 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50" />
+                                    <label className="text-sm text-slate-400">Mode:</label>
+                                    <select value={dlMode} onChange={e => setDlMode(e.target.value)} disabled={dlActive}
+                                        className="px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50">
+                                        <option value="sequential">Sequential</option>
+                                        <option value="fast">Fast (parallel)</option>
+                                    </select>
+                                    <label className="text-sm text-slate-400">Workers:</label>
+                                    <input type="number" min="2" max="8" value={dlWorkers}
+                                        onChange={e => setDlWorkers(Math.max(2, Math.min(8, parseInt(e.target.value) || 3)))}
+                                        disabled={dlActive || dlMode !== 'fast'}
+                                        className="w-20 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50" />
                                 </div>
                                 {dlProgress && (
                                     <div className="space-y-2">
