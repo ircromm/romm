@@ -80,6 +80,22 @@ python tools/investigate_download_gap.py --url "<URL-direta-do-arquivo>" --mb 10
 2. Se `trust_env=False` ganhar, adicionar opção no app para desabilitar uso de proxy de ambiente.
 3. Testar modo `fast` com 2–3 workers e comparar MB/s total.
 
+## Workarounds já disponíveis no app
+
+1. **Trocar backend para `curl`** no Myrient Browser (Backend: `cURL (fallback)`).
+   - Mantém download no destino escolhido pelo app, mas usa stack de transporte do `curl`.
+
+2. **Trocar backend para `browser`** (Backend: `Browser link only`).
+   - O app abre o link direto no navegador padrão, usando exatamente o mesmo caminho de rede do browser.
+
+3. **Desabilitar proxy/env no `requests` via variável de ambiente**:
+
+```bash
+ROMM_DOWNLOAD_TRUST_ENV=0 python main.py
+```
+
+Isso força `requests.Session.trust_env=False` e evita proxy/PAC herdado do ambiente quando ele é o gargalo.
+
 ### P1 (curto prazo)
 1. Adicionar telemetria por arquivo no app:
    - DNS/connect/TLS/TTFB/throughput médio.
