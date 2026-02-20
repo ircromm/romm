@@ -38,7 +38,7 @@ Core modules identified in the project:
 * `parser` – DAT XML parsing
 * `scanner` – filesystem ROM scanning + hashing
 * `matcher` – ROM ↔ DAT matching logic
-* `downloader` – DAT download support
+* `monitor` – real-time application event monitoring
 * `utils` – helpers
 * `shared_config` – configuration layer
 * `web` – API endpoints
@@ -299,37 +299,33 @@ It is a full-stack ROM management tool intended for structured archival organiza
 
 ---
 
-## 12. Download Engine
+## 12. Download Feature Removal (Current Behavior)
 
-The application downloads ROMs from Myrient (myrient.erista.me) sequentially, one file at a time — matching how a browser downloads files.
+Download functionality was fully removed from the application codebase.
 
-### Key features:
+### What changed
 
-* Single-file sequential downloads (full bandwidth per file)
-* Configurable delay between downloads (0-60 seconds, default: 5s)
-* Streaming CRC32 verification during download
-* Connection pooling with keep-alive for performance
-* Pause, resume, and cancel controls
-* Automatic retry with exponential backoff
+* All in-app download actions and download buttons were removed.
+* The **Downloads** menu is preserved only as a navigation entry.
+* The **Downloads > Myrient** option now opens the default Myrient website directly:
+  * `https://myrient.erista.me`
 
-### Configuring download delay:
+### Historical note (how it worked before)
 
-CLI:
-  python main.py --dat nointro.dat --roms ./roms --download-delay 10
+Previously, the application had a direct Myrient download engine with:
 
-GUI:
-  Downloads > Download Missing ROMs > "Delay between downloads" spinbox
+* Sequential file downloads
+* Optional delay between downloads
+* Streaming CRC32 verification
+* Pause/resume/cancel style controls
 
-Web:
-  Download dialog > "Delay between downloads" input field
-
-The delay is a courtesy wait between file completions. During each individual download, the connection runs at full speed with no throttling.
+This behavior is no longer available in the app.
 
 ---
 
 ## 13. Myrient System Catalog
 
-The downloader includes a built-in catalog of ~50 systems mapped to their Myrient URLs, covering:
+Historically, the downloader included a built-in catalog of ~50 systems mapped to Myrient URLs, covering:
 
 * Nintendo (NES, SNES, N64, GB, GBA, DS, 3DS, GameCube, Wii, Wii U)
 * Sony (PS1, PS2, PS3, PSP, Vita)
