@@ -365,8 +365,16 @@ class MyrientDownloader:
         return clean.rsplit('/', 1)[0] + '/'
 
     def get_myrient_page_for_rom(self, rom: ROMInfo) -> Optional[str]:
-        """Return the direct Myrient URL for a ROM (one step from manual download)."""
-        return self.find_rom_url(rom, validate=False)
+        """Return best Myrient destination for a ROM.
+
+        Preference order:
+        1) Direct game URL (validated with HEAD)
+        2) System page URL
+        """
+        direct_url = self.find_rom_url(rom, validate=True)
+        if direct_url:
+            return direct_url
+        return self.find_system_url(rom.system_name)
 
     # ── Directory Listing ──────────────────────────────────────
 

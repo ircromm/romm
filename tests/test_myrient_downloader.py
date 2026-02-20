@@ -127,3 +127,12 @@ def test_get_myrient_page_for_rom_returns_game_specific_url():
     assert dl.get_myrient_page_for_rom(rom) == (
         'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/Skies%20of%20Arcadia%20%28USA%29%20%28Disc%201%29.zip'
     )
+
+
+def test_get_myrient_page_for_rom_falls_back_to_system_page():
+    dl = _new_downloader(_HeadOkSession())
+    dl.find_rom_url = lambda rom, validate=False: None
+    dl.find_system_url = lambda _name: 'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/'
+    rom = ROMInfo(name='Skies of Arcadia (USA)', size=0, crc32='', system_name='Sega - Dreamcast')
+
+    assert dl.get_myrient_page_for_rom(rom) == 'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/'
