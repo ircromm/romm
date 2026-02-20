@@ -356,6 +356,18 @@ class MyrientDownloader:
 
         return None
 
+    @staticmethod
+    def directory_url(file_url: str) -> str:
+        """Return the parent Myrient directory URL for a file URL."""
+        clean = file_url.split('?', 1)[0].split('#', 1)[0].rstrip('/')
+        if '/' not in clean:
+            return file_url
+        return clean.rsplit('/', 1)[0] + '/'
+
+    def get_myrient_page_for_rom(self, rom: ROMInfo) -> Optional[str]:
+        """Return the Myrient page URL that contains this ROM."""
+        return self.find_system_url(rom.system_name)
+
     # ── Directory Listing ──────────────────────────────────────
 
     def list_files(self, system_name: str = "",

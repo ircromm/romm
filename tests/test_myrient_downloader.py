@@ -106,3 +106,20 @@ def test_queue_delay_schedule():
     assert MyrientDownloader._queue_delay_seconds(3) == 60
     assert MyrientDownloader._queue_delay_seconds(4) == 120
     assert MyrientDownloader._queue_delay_seconds(10) == 120
+
+
+def test_directory_url_returns_parent_folder():
+    assert (
+        MyrientDownloader.directory_url(
+            'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/Game.zip'
+        )
+        == 'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/'
+    )
+
+
+def test_get_myrient_page_for_rom_uses_system_mapping():
+    dl = _new_downloader(_HeadOkSession())
+    dl.find_system_url = lambda _name: 'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/'
+    rom = ROMInfo(name='Skies of Arcadia (USA)', size=0, crc32='', system_name='Sega - Dreamcast')
+
+    assert dl.get_myrient_page_for_rom(rom) == 'https://myrient.erista.me/files/Redump/Sega%20-%20Dreamcast/'
