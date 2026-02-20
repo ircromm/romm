@@ -1,33 +1,5 @@
-import os
-import tempfile
-import zlib
-
 from rommanager.models import ROMInfo
 from rommanager.myrient_downloader import DownloadProgress, DownloadTask, MyrientDownloader
-
-
-class _FakeResponse:
-    def __init__(self, data: bytes, status_code: int = 200):
-        self._data = data
-        self.status_code = status_code
-        self.headers = {'content-length': str(len(data))}
-
-    def raise_for_status(self):
-        return None
-
-    def iter_content(self, chunk_size=65536):
-        for i in range(0, len(self._data), chunk_size):
-            yield self._data[i:i + chunk_size]
-
-
-class _FakeSession:
-    def __init__(self, response):
-        self.response = response
-        self.last_headers = None
-
-    def get(self, url, stream=True, timeout=None, headers=None):
-        self.last_headers = headers or {}
-        return self.response
 
 
 class _HeadOkSession:
@@ -78,27 +50,30 @@ def test_find_rom_url_validate_true_performs_head_once_with_cache():
     assert session.calls == 1
 
 
-def test_download_file_resumes_from_part_file_using_range():
-    payload = b'def'
-    session = _FakeSession(_FakeResponse(payload, status_code=206))
-    dl = _new_downloader(session)
+def test_download_file_opens_url_in_browser(monkeypatch):
+    dl = _new_downloader(_HeadOkSession())
+    task = DownloadTask(rom_name='game', url='https://example.com/game.zip', dest_path='unused/game.zip')
+    progress = DownloadProgress(total_count=1)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        final_path = os.path.join(tmp, 'game.zip')
-        part_path = final_path + '.part'
-        with open(part_path, 'wb') as fh:
-            fh.write(b'abc')
+    opened = []
 
-        task = DownloadTask(rom_name='game', url='https://example.com/game.zip', dest_path=final_path)
-        progress = DownloadProgress(total_count=1)
+    def fake_open(url, new=0):
+        opened.append((url, new))
+        return True
 
-        dl._download_file(task, progress, callback=None)
+    monkeypatch.setattr('rommanager.myrient_downloader.webbrowser.open', fake_open)
 
-        assert session.last_headers.get('Range') == 'bytes=3-'
-        with open(final_path, 'rb') as fh:
-            assert fh.read() == b'abcdef'
-        assert not os.path.exists(part_path)
-        assert task.downloaded_bytes == 6
-        assert task.total_bytes == 6
-        expected_crc = f"{zlib.crc32(b'abcdef') & 0xFFFFFFFF:08x}"
-        assert task.computed_crc == expected_crc
+    dl._download_file(task, progress, callback=None)
+
+    assert opened == [('https://example.com/game.zip', 2)]
+    assert task.downloaded_bytes == 1
+    assert task.total_bytes == 1
+
+
+def test_queue_delay_schedule():
+    assert MyrientDownloader._queue_delay_seconds(0) == 0
+    assert MyrientDownloader._queue_delay_seconds(1) == 15
+    assert MyrientDownloader._queue_delay_seconds(2) == 30
+    assert MyrientDownloader._queue_delay_seconds(3) == 60
+    assert MyrientDownloader._queue_delay_seconds(4) == 120
+    assert MyrientDownloader._queue_delay_seconds(10) == 120
