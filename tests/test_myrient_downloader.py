@@ -21,6 +21,7 @@ def _new_downloader(session):
     dl._cancel_flag = False
     dl._pause_flag = False
     dl._url_cache = {}
+    dl.download_backend = 'auto'
     return dl
 
 
@@ -52,6 +53,7 @@ def test_find_rom_url_validate_true_performs_head_once_with_cache():
 
 def test_download_file_opens_url_in_browser(monkeypatch):
     dl = _new_downloader(_HeadOkSession())
+    dl.download_backend = 'browser'
     task = DownloadTask(rom_name='game', url='https://example.com/game.zip', dest_path='unused/game.zip')
     progress = DownloadProgress(total_count=1)
 
@@ -68,6 +70,33 @@ def test_download_file_opens_url_in_browser(monkeypatch):
     assert opened == [('https://example.com/game.zip', 2)]
     assert task.downloaded_bytes == 1
     assert task.total_bytes == 1
+
+
+def test_download_file_auto_falls_back_to_browser(monkeypatch):
+    dl = _new_downloader(_HeadOkSession())
+    dl.download_backend = 'auto'
+    task = DownloadTask(rom_name='game', url='https://example.com/game.zip', dest_path='unused/game.zip')
+    progress = DownloadProgress(total_count=1)
+
+    def fail_requests(*_args, **_kwargs):
+        raise RuntimeError('requests failed')
+
+    def fail_curl(*_args, **_kwargs):
+        raise RuntimeError('curl failed')
+
+    opened = []
+
+    def fake_open(url, new=0):
+        opened.append((url, new))
+        return True
+
+    monkeypatch.setattr(dl, '_download_file_requests', fail_requests)
+    monkeypatch.setattr(dl, '_download_file_curl', fail_curl)
+    monkeypatch.setattr('rommanager.myrient_downloader.webbrowser.open', fake_open)
+
+    dl._download_file(task, progress, callback=None)
+
+    assert opened == [('https://example.com/game.zip', 2)]
 
 
 def test_queue_delay_schedule():
