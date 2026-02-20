@@ -653,6 +653,9 @@ def myrient_download_missing():
     download_mode = data.get('download_mode', 'sequential')
     if download_mode not in ('sequential', 'fast'):
         download_mode = 'sequential'
+    download_backend = data.get('download_backend', 'auto')
+    if download_backend not in ('auto', 'requests', 'curl', 'browser'):
+        download_backend = 'auto'
     download_workers = max(2, min(8, int(data.get('download_workers', 3))))
 
     if not dest_folder or not os.path.isdir(dest_folder):
@@ -709,6 +712,7 @@ def myrient_download_missing():
                 on_progress,
                 download_delay=download_delay,
                 mode=download_mode,
+                download_backend=download_backend,
                 max_workers=download_workers,
             )
             dl_state['log'].append(
@@ -740,6 +744,9 @@ def myrient_download_files():
     download_mode = data.get('download_mode', 'sequential')
     if download_mode not in ('sequential', 'fast'):
         download_mode = 'sequential'
+    download_backend = data.get('download_backend', 'auto')
+    if download_backend not in ('auto', 'requests', 'curl', 'browser'):
+        download_backend = 'auto'
     download_workers = max(2, min(8, int(data.get('download_workers', 3))))
 
     if not dest_folder or not os.path.isdir(dest_folder):
@@ -776,6 +783,7 @@ def myrient_download_files():
                 on_progress,
                 download_delay=download_delay,
                 mode=download_mode,
+                download_backend=download_backend,
                 max_workers=download_workers,
             )
             dl_state['log'].append(
@@ -1071,6 +1079,7 @@ HTML_TEMPLATE = r'''
             const [dlLog, setDlLog] = useState([]);
             const [dlDelay, setDlDelay] = useState(0);
             const [dlMode, setDlMode] = useState('sequential');
+            const [dlBackend, setDlBackend] = useState('auto');
             const [dlWorkers, setDlWorkers] = useState(3);
             const dlPollRef = useRef(null);
 
@@ -1277,7 +1286,14 @@ HTML_TEMPLATE = r'''
 
             const downloadMyrientFiles = async (files, dest) => {
                 setShowDownloadDialog(true);
-                const res = await api.post('/api/myrient/download-files', { dest_folder: dest, files, download_delay: dlDelay, download_mode: dlMode, download_workers: dlWorkers });
+                const res = await api.post('/api/myrient/download-files', {
+                    dest_folder: dest,
+                    files,
+                    download_delay: dlDelay,
+                    download_mode: dlMode,
+                    download_backend: dlBackend,
+                    download_workers: dlWorkers
+                });
                 if (res.error) { notify('error', res.error); return; }
                 notify('success', `Queued ${files.length} files for download`);
                 startDlPoll();
@@ -1293,6 +1309,7 @@ HTML_TEMPLATE = r'''
                     selected_names: selectedNames,
                     download_delay: dlDelay,
                     download_mode: dlMode,
+                    download_backend: dlBackend,
                     download_workers: dlWorkers,
                 });
                 if (res.error) { notify('error', res.error); return; }
@@ -1553,6 +1570,14 @@ HTML_TEMPLATE = r'''
                                         className="px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50">
                                         <option value="sequential">Sequential</option>
                                         <option value="fast">Fast (parallel)</option>
+                                    </select>
+                                    <label className="text-sm text-slate-400">Backend:</label>
+                                    <select value={dlBackend} onChange={e => setDlBackend(e.target.value)} disabled={dlActive}
+                                        className="px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50">
+                                        <option value="auto">Auto (requests → curl → browser)</option>
+                                        <option value="requests">Requests (internal)</option>
+                                        <option value="curl">cURL (fallback)</option>
+                                        <option value="browser">Browser link only</option>
                                     </select>
                                     <label className="text-sm text-slate-400">Workers:</label>
                                     <input type="number" min="2" max="8" value={dlWorkers}

@@ -11,6 +11,8 @@ configurable delay between files.
 """
 
 import os
+import shutil
+import subprocess
 import time
 import zlib
 import zipfile
@@ -293,6 +295,13 @@ class MyrientDownloader:
         self._queue: List[DownloadTask] = []
         self._cancel_flag = False
         self._pause_flag = False
+
+        # Download transport strategy:
+        # - auto: requests first, fallback to curl, browser as last resort
+        # - requests: internal streaming download to destination folder
+        # - curl: external curl download to destination folder
+        # - browser: open direct URL in browser
+        self.download_backend = "auto"
         
 
     # ── Catalog helpers ────────────────────────────────────────
@@ -477,6 +486,7 @@ class MyrientDownloader:
                         progress_callback: Optional[Callable[[DownloadProgress], None]] = None,
                         download_delay: int = 0,
                         mode: str = "sequential",
+                        download_backend: str = "auto",
                         max_workers: int = 3) -> DownloadProgress:
         """
         Execute queued downloads.
@@ -485,8 +495,13 @@ class MyrientDownloader:
             progress_callback: Called when progress changes.
             download_delay: Seconds to wait between downloads in sequential mode (0-60, default 0).
             mode: "sequential" (default) or "fast".
+            download_backend: "auto", "requests", "curl", or "browser".
             max_workers: Worker count when mode="fast" (2-8 recommended).
         """
+        if download_backend not in ("auto", "requests", "curl", "browser"):
+            download_backend = "auto"
+        self.download_backend = download_backend
+
         if mode == "fast":
             return self.start_downloads_fast(progress_callback, max_workers=max_workers)
 
@@ -658,8 +673,41 @@ class MyrientDownloader:
                        progress: DownloadProgress,
                        callback: Optional[Callable[[DownloadProgress], None]]):
         """
-        Open the direct file URL in the user's browser.
+        Download a file using configured backend with fallback.
         """
+        if self._cancel_flag:
+            task.status = DownloadStatus.CANCELLED
+            return
+
+        backend_order = {
+            "auto": ["requests", "curl", "browser"],
+            "requests": ["requests", "curl", "browser"],
+            "curl": ["curl", "requests", "browser"],
+            "browser": ["browser", "requests", "curl"],
+        }.get(self.download_backend, ["requests", "curl", "browser"])
+
+        last_error = None
+        for backend in backend_order:
+            try:
+                if backend == "requests":
+                    self._download_file_requests(task, progress, callback)
+                elif backend == "curl":
+                    self._download_file_curl(task, progress, callback)
+                else:
+                    self._download_file_browser(task, progress, callback)
+                return
+            except Exception as e:
+                last_error = e
+                log_event('download.backend.failover',
+                          f'Backend {backend} failed for {task.rom_name}: {e}. Trying next backend.',
+                          logging.WARNING)
+
+        raise RuntimeError(f"All backends failed for {task.rom_name}: {last_error}")
+
+    def _download_file_browser(self, task: DownloadTask,
+                               progress: DownloadProgress,
+                               callback: Optional[Callable[[DownloadProgress], None]]):
+        """Open the direct file URL in the user's browser."""
         if self._cancel_flag:
             task.status = DownloadStatus.CANCELLED
             return
@@ -675,6 +723,90 @@ class MyrientDownloader:
 
         if callback:
             self._safe_callback(progress, callback)
+
+    def _download_file_requests(self, task: DownloadTask,
+                                progress: DownloadProgress,
+                                callback: Optional[Callable[[DownloadProgress], None]]):
+        """Download using requests streaming to destination path."""
+        os.makedirs(os.path.dirname(task.dest_path), exist_ok=True)
+        part_path = task.dest_path + ".part"
+        downloaded = os.path.getsize(part_path) if os.path.exists(part_path) else 0
+
+        headers = {}
+        mode = "wb"
+        if downloaded > 0:
+            headers['Range'] = f'bytes={downloaded}-'
+            mode = "ab"
+
+        with self.session.get(task.url, headers=headers, stream=True, timeout=self.timeout) as resp:
+            if downloaded > 0 and resp.status_code == 200:
+                downloaded = 0
+                mode = "wb"
+            resp.raise_for_status()
+
+            total = int(resp.headers.get('content-length', 0))
+            if downloaded > 0 and total > 0:
+                task.total_bytes = downloaded + total
+            else:
+                task.total_bytes = total
+
+            task.downloaded_bytes = downloaded
+            with open(part_path, mode) as f:
+                for chunk in resp.iter_content(chunk_size=512 * 1024):
+                    if self._cancel_flag:
+                        task.status = DownloadStatus.CANCELLED
+                        return
+                    while self._pause_flag and not self._cancel_flag:
+                        time.sleep(0.5)
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    task.downloaded_bytes = downloaded
+                    if callback:
+                        self._safe_callback(progress, callback)
+
+        os.replace(part_path, task.dest_path)
+        task.total_bytes = task.downloaded_bytes
+        log_event('download.file.saved', f'Saved via requests: {task.rom_name} -> {task.dest_path}')
+
+    def _download_file_curl(self, task: DownloadTask,
+                            progress: DownloadProgress,
+                            callback: Optional[Callable[[DownloadProgress], None]]):
+        """Download using curl (external process) to destination path."""
+        if not shutil.which('curl'):
+            raise RuntimeError('curl is not available in PATH')
+
+        os.makedirs(os.path.dirname(task.dest_path), exist_ok=True)
+        part_path = task.dest_path + '.part'
+        cmd = [
+            'curl', '-L', '--fail', '--retry', '3', '--retry-delay', '1',
+            '--continue-at', '-', '-o', part_path, task.url,
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        while proc.poll() is None:
+            if self._cancel_flag:
+                proc.terminate()
+                task.status = DownloadStatus.CANCELLED
+                return
+            while self._pause_flag and not self._cancel_flag:
+                time.sleep(0.5)
+            if os.path.exists(part_path):
+                task.downloaded_bytes = os.path.getsize(part_path)
+                if callback:
+                    self._safe_callback(progress, callback)
+            time.sleep(0.5)
+
+        stderr = (proc.stderr.read() or '').strip() if proc.stderr else ''
+        if proc.returncode != 0:
+            raise RuntimeError(f'curl exited with code {proc.returncode}: {stderr}')
+
+        if os.path.exists(part_path):
+            os.replace(part_path, task.dest_path)
+            task.downloaded_bytes = os.path.getsize(task.dest_path)
+            task.total_bytes = task.downloaded_bytes
+        log_event('download.file.saved', f'Saved via curl: {task.rom_name} -> {task.dest_path}')
 
     @staticmethod
     def _compute_crc32_int(filepath: str) -> int:
