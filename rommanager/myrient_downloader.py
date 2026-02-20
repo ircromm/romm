@@ -259,6 +259,11 @@ class MyrientDownloader:
             )
         self.session = requests.Session()
 
+        # Network workaround: allow disabling proxy/env auto-discovery when
+        # requests is slower than browser/curl on specific routes/CDNs.
+        trust_env_raw = os.getenv("ROMM_DOWNLOAD_TRUST_ENV", "1").strip().lower()
+        self.session.trust_env = trust_env_raw not in ("0", "false", "no", "off")
+
         # Robust retry strategy (handles transient server errors)
         retries = Retry(
             total=3,
@@ -285,6 +290,11 @@ class MyrientDownloader:
                           'Chrome/120.0.0.0 Safari/537.36',
             'Connection': 'keep-alive',
         })
+        log_event(
+            'download.session.trust_env',
+            f'requests.Session.trust_env={self.session.trust_env} '
+            '(override with ROMM_DOWNLOAD_TRUST_ENV=0|1)'
+        )
         # Split timeout: faster connect failure + generous read timeout for large files
         self.timeout = (10, 90)
 
