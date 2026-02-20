@@ -15,6 +15,7 @@ import time
 import zlib
 import zipfile
 import logging
+import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -491,7 +492,6 @@ class MyrientDownloader:
 
         self._cancel_flag = False
         self._pause_flag = False
-        download_delay = max(0, min(60, download_delay))
         progress = DownloadProgress(total_count=len(self._queue))
 
         for i, task in enumerate(self._queue):
@@ -505,13 +505,9 @@ class MyrientDownloader:
             while self._pause_flag and not self._cancel_flag:
                 time.sleep(0.5)
 
-            if i > 0 and download_delay > 0 and not self._cancel_flag:
-                for _ in range(download_delay * 2):
-                    if self._cancel_flag or self._pause_flag:
-                        break
-                    time.sleep(0.5)
-                while self._pause_flag and not self._cancel_flag:
-                    time.sleep(0.5)
+            delay_seconds = self._queue_delay_seconds(i)
+            if delay_seconds > 0 and not self._cancel_flag:
+                self._wait_with_pause_cancel(delay_seconds)
 
             if self._cancel_flag:
                 task.status = DownloadStatus.CANCELLED
@@ -590,27 +586,9 @@ class MyrientDownloader:
         if self._cancel_flag:
             return
 
-        if task.expected_crc:
-            actual_crc = task.computed_crc
-            if actual_crc.lower() == task.expected_crc.lower():
-                task.status = DownloadStatus.COMPLETE
-                status_msg = f'Completed {task.rom_name}'
-                ok = True
-            else:
-                inner_crc = self._check_inner_zip_crc(task.dest_path, task.expected_crc)
-                if inner_crc and inner_crc.lower() == task.expected_crc.lower():
-                    task.status = DownloadStatus.COMPLETE
-                    status_msg = f'Completed {task.rom_name} (inner ZIP CRC ok)'
-                    ok = True
-                else:
-                    task.status = DownloadStatus.CRC_MISMATCH
-                    task.error = f"CRC mismatch: expected {task.expected_crc}, got {actual_crc}"
-                    status_msg = f'{task.rom_name}: {task.error}'
-                    ok = False
-        else:
-            task.status = DownloadStatus.COMPLETE
-            status_msg = f'Completed {task.rom_name}'
-            ok = True
+        task.status = DownloadStatus.COMPLETE
+        status_msg = f'Opened in browser: {task.rom_name}'
+        ok = True
 
         if lock:
             with lock:
@@ -652,66 +630,51 @@ class MyrientDownloader:
         if callback:
             callback(progress)
 
+    @staticmethod
+    def _queue_delay_seconds(task_index: int) -> int:
+        """Delay before each task index (0-based) to stagger browser opens."""
+        if task_index <= 0:
+            return 0
+        if task_index == 1:
+            return 15
+        if task_index == 2:
+            return 30
+        if task_index == 3:
+            return 60
+        return 120
+
+    def _wait_with_pause_cancel(self, seconds: int):
+        """Wait while honoring pause/cancel flags."""
+        for _ in range(seconds * 2):
+            if self._cancel_flag:
+                return
+            while self._pause_flag and not self._cancel_flag:
+                time.sleep(0.5)
+            if self._cancel_flag:
+                return
+            time.sleep(0.5)
+
     def _download_file(self, task: DownloadTask,
                        progress: DownloadProgress,
                        callback: Optional[Callable[[DownloadProgress], None]]):
         """
-        Download a single file with resume support (.part + Range), computing CRC32 during streaming.
+        Open the direct file URL in the user's browser.
         """
-        os.makedirs(os.path.dirname(task.dest_path) or '.', exist_ok=True)
+        if self._cancel_flag:
+            task.status = DownloadStatus.CANCELLED
+            return
 
-        temp_path = task.dest_path + '.part'
-        resumed_bytes = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+        opened = webbrowser.open(task.url, new=2)
+        if not opened:
+            raise RuntimeError(f"Failed to open browser for URL: {task.url}")
 
-        headers: Dict[str, str] = {}
-        write_mode = 'wb'
-        crc = 0
+        task.total_bytes = 1
+        task.downloaded_bytes = 1
+        task.computed_crc = ""
+        log_event('download.link.opened', f'Opened in browser: {task.rom_name} -> {task.url}')
 
-        if resumed_bytes > 0:
-            headers['Range'] = f'bytes={resumed_bytes}-'
-            write_mode = 'ab'
-            crc = self._compute_crc32_int(temp_path)
-            log_event('download.resume.detected', f'Resuming {task.rom_name} from byte {resumed_bytes}')
-
-        resp = self.session.get(task.url, stream=True, timeout=self.timeout, headers=headers)
-        resp.raise_for_status()
-
-        if resumed_bytes > 0 and resp.status_code != 206:
-            # Server ignored Range; restart cleanly.
-            resumed_bytes = 0
-            write_mode = 'wb'
-            crc = 0
-            log_event('download.resume.restart', f'Server ignored Range, restarting {task.rom_name}')
-
-        content_length = int(resp.headers.get('content-length', 0) or 0)
-        task.total_bytes = content_length + resumed_bytes if resumed_bytes else content_length
-        task.downloaded_bytes = resumed_bytes
-
-        chunk_size = 256 * 1024
-        last_ui_update = 0.0
-
-        with open(temp_path, write_mode) as f:
-            for chunk in resp.iter_content(chunk_size=chunk_size):
-                if self._cancel_flag:
-                    task.status = DownloadStatus.CANCELLED
-                    log_event('download.cancelled', f'Cancelled during transfer: {task.rom_name}')
-                    return
-
-                while self._pause_flag and not self._cancel_flag:
-                    time.sleep(0.5)
-
-                if chunk:
-                    f.write(chunk)
-                    task.downloaded_bytes += len(chunk)
-                    crc = zlib.crc32(chunk, crc)
-
-                    now = time.time()
-                    if callback and task.total_bytes > 0 and (now - last_ui_update > 0.1):
-                        self._safe_callback(progress, callback)
-                        last_ui_update = now
-
-        os.replace(temp_path, task.dest_path)
-        task.computed_crc = f"{crc & 0xFFFFFFFF:08x}"
+        if callback:
+            self._safe_callback(progress, callback)
 
     @staticmethod
     def _compute_crc32_int(filepath: str) -> int:
