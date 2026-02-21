@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import flet as ft
 
@@ -73,8 +73,6 @@ class RetroFlowFletApp:
             run_spacing=12,
             expand=True,
         )
-        self.dat_picker = ft.FilePicker(on_result=self._on_dat_selected)
-        self.folder_picker = ft.FilePicker(on_result=self._on_scan_folder_selected)
 
     def configure_page(self) -> None:
         """Configure theme and page shell."""
@@ -86,7 +84,6 @@ class RetroFlowFletApp:
         self.page.window_height = 920
         self.page.window_min_width = 1100
         self.page.window_min_height = 700
-        self.page.overlay.extend([self.dat_picker, self.folder_picker])
 
     def build(self) -> None:
         """Build the root layout with left nav, body, and progressive details pane."""
@@ -195,8 +192,8 @@ class RetroFlowFletApp:
                     ft.Text("Adiciona DATs e faz scan de diretórios sem bloquear a interface.", color=self.CATPPUCCIN["subtext1"]),
                     ft.Row(
                         controls=[
-                            ft.ElevatedButton("Adicionar DAT", icon=ft.icons.NOTE_ADD, on_click=lambda _: self.dat_picker.pick_files(allow_multiple=True)),
-                            ft.ElevatedButton("Selecionar Pasta para Scan", icon=ft.icons.FOLDER_OPEN, on_click=lambda _: self.folder_picker.get_directory_path()),
+                            ft.ElevatedButton("Adicionar DAT", icon=ft.icons.NOTE_ADD, on_click=self._handle_add_dat),
+                            ft.ElevatedButton("Selecionar Pasta para Scan", icon=ft.icons.FOLDER_OPEN, on_click=self._handle_scan_folder),
                         ]
                     ),
                     ft.Text(f"DATs carregados: {len(self.multi_matcher.get_dat_list())}", color=self.CATPPUCCIN["subtext1"]),
@@ -340,25 +337,29 @@ class RetroFlowFletApp:
         self.nav_rail.selected_index = self.NAV_IMPORT
         self._render_current_view(self.NAV_IMPORT)
 
-    def _on_dat_selected(self, event: ft.FilePickerResultEvent) -> None:
-        if not event.files:
+    async def _handle_add_dat(self, _: ft.ControlEvent) -> None:
+        file_result = await ft.FilePicker().pick_files_async(allow_multiple=True)
+        if not file_result or not file_result.files:
             return
+
         loaded = 0
-        for f in event.files:
+        for selected_file in file_result.files:
             try:
-                dat_info, roms = DATParser.parse_with_info(f.path)
+                dat_info, roms = DATParser.parse_with_info(selected_file.path)
                 self.multi_matcher.add_dat(dat_info, roms)
                 loaded += 1
             except Exception as exc:
-                self.page.snack_bar = ft.SnackBar(ft.Text(f"Erro a carregar DAT {f.name}: {exc}"), open=True)
+                self.page.snack_bar = ft.SnackBar(ft.Text(f"Erro a carregar DAT {selected_file.name}: {exc}"), open=True)
                 self.page.update()
+
         self.page.snack_bar = ft.SnackBar(ft.Text(f"{loaded} DAT(s) carregado(s)."), open=True)
         self._render_current_view(self.nav_rail.selected_index if self.nav_rail else self.NAV_IMPORT)
 
-    def _on_scan_folder_selected(self, event: ft.FilePickerResultEvent) -> None:
-        if not event.path:
+    async def _handle_scan_folder(self, _: ft.ControlEvent) -> None:
+        selected_folder = await ft.FilePicker().get_directory_path_async()
+        if not selected_folder:
             return
-        self.page.run_task(self._run_scan_pipeline, event.path)
+        self.page.run_task(self._run_scan_pipeline, selected_folder)
 
     async def _run_scan_pipeline(self, folder: str) -> None:
         files = await asyncio.to_thread(FileScanner.collect_files, folder, True, True)
