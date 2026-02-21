@@ -1,7 +1,7 @@
 # ROM Manager Requirements
 
 # Desktop interface
-flet>=0.27.0
+flet>=0.27.6
 
 # Web interface (optional)
 flask>=2.0.0
