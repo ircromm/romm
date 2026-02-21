@@ -16,6 +16,11 @@ from .scanner import FileScanner
 from .utils import format_size
 
 
+def _safe_icon(primary: str, fallback: str = "HELP_OUTLINE") -> str:
+    """Return a Flet icon constant while tolerating version differences."""
+    return getattr(ft.icons, primary, getattr(ft.icons, fallback, ft.icons.HELP_OUTLINE))
+
+
 class RetroFlowFletApp:
     """Main Flet application shell implementing progressive disclosure UI."""
 
@@ -96,7 +101,7 @@ class RetroFlowFletApp:
             leading=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Icon(ft.icons.GAMEPAD_ROUNDED, color=self.CATPPUCCIN["mauve"], size=32),
+                        ft.Icon(_safe_icon("GAMEPAD_ROUNDED", "SPORTS_ESPORTS_ROUNDED"), color=self.CATPPUCCIN["mauve"], size=32),
                         ft.Text("RetroFlow", size=20, weight=ft.FontWeight.W_700),
                         ft.Text("ROM Manager", size=11, color=self.CATPPUCCIN["subtext1"]),
                     ],
