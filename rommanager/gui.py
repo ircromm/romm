@@ -5,7 +5,6 @@ Graphical user interface for ROM Manager (tkinter)
 from __future__ import annotations
 
 import os
-import re
 import threading
 import webbrowser
 import logging
@@ -244,38 +243,15 @@ class ROMManagerGUI:
         ms_f = ttk.Frame(self.notebook)
         self.notebook.add(ms_f, text="Missing ROMs")
 
-        # Toolbar (ABOVE table)
-        ms_toolbar = ttk.Frame(ms_f)
-        ms_toolbar.pack(fill=tk.X, padx=0, pady=(0, 5))
-
-        # Left side: View actions
-        ms_left = ttk.Frame(ms_toolbar)
-        ms_left.pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(ms_left, text="Refresh", command=self._refresh_missing).pack(side=tk.LEFT)
-        ttk.Button(ms_left, text="Search Archive.org", command=self._search_archive).pack(side=tk.LEFT, padx=(5, 0))
-
-        # Right side: Selection info
-        ms_right = ttk.Frame(ms_toolbar)
-        ms_right.pack(side=tk.RIGHT)
-
-        # Selection count label
-        self.ms_selection_var = tk.StringVar(value="")
-        ttk.Label(ms_right, textvariable=self.ms_selection_var).pack(side=tk.LEFT, padx=(10, 0))
-
         # Completeness info (BELOW toolbar)
         ms_info = ttk.Frame(ms_f)
-        ms_info.pack(fill=tk.X, padx=0, pady=(0, 3))
+        ms_info.pack(fill=tk.X, padx=0, pady=(0, 6))
         self.completeness_var = tk.StringVar(value="Load DATs and scan to see missing ROMs")
         ttk.Label(ms_info, textvariable=self.completeness_var, style='Stats.TLabel').pack(side=tk.LEFT)
 
         # The table itself
         self.ms_tree = self._make_tree(ms_f, MISSING_COLUMNS)
         self._setup_region_tags(self.ms_tree)
-
-        # Bind selection change events to update selection count
-        self.ms_tree.bind('<<Change>>', self._update_ms_selection_count)
-        self.ms_tree.bind('<Button-1>', lambda e: self.root.after(10, self._update_ms_selection_count))
-        self.ms_tree.bind('<Control-Button-1>', lambda e: self.root.after(10, self._update_ms_selection_count))
 
         # Stats
         self.stats_var = tk.StringVar(value="No files scanned")
@@ -323,7 +299,6 @@ class ROMManagerGUI:
         # Keyboard shortcuts
         self.root.bind('<Control-a>', self._on_select_all)
         self.root.bind('<Control-c>', self._on_copy)
-        self.root.bind('<F5>', self._on_refresh)
         self.root.bind('<Delete>', self._on_delete_key)
         self.root.bind('<Escape>', self._on_escape)
 
@@ -429,10 +404,6 @@ class ROMManagerGUI:
         menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
 
         menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-        menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
-        menu.add_separator()
-        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
-        menu.add_command(label="Copy to Clipboard", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
 
         menu.post(event.x_root, event.y_root)
 
@@ -553,13 +524,6 @@ class ROMManagerGUI:
         return 'break'
 
 
-    def _on_refresh(self, event=None):
-        """F5: Refresh Missing tab"""
-        current_tab = self.notebook.index(self.notebook.select())
-        if current_tab == 2:  # Missing tab
-            self._refresh_missing()
-        return 'break'
-
     def _on_delete_key(self, event=None):
         """Delete: Move selected from Unidentified to Missing"""
         current_tab = self.notebook.index(self.notebook.select())
@@ -588,15 +552,6 @@ class ROMManagerGUI:
 
         tree.selection_set()  # Clear selection
         return 'break'
-
-    def _update_ms_selection_count(self, event=None):
-        """Update the selection count label in Missing tab toolbar"""
-        selection = self.ms_tree.selection()
-        if selection:
-            count = len(selection)
-            self.ms_selection_var.set(f"({count} selected)")
-        else:
-            self.ms_selection_var.set("")
 
     # ── Column Sorting ─────────────────────────────────────────────
 
@@ -870,19 +825,6 @@ class ROMManagerGUI:
             f"Missing: {c['missing']}")
         self.notebook.tab(2, text=f"Missing ({len(missing):,})")
         self._emit_event('missing.refreshed', f'Missing ROMs: {len(missing)}')
-
-    def _search_archive(self):
-        sel = self.ms_tree.selection()
-        if not sel:
-            messagebox.showwarning("Warning", "Select missing ROMs first")
-            return
-        for item in sel[:5]:
-            vals = self.ms_tree.item(item, 'values')
-            if vals:
-                clean = re.sub(r'\.[^.]+$', '', vals[0])
-                clean = re.sub(r'\s*\([^)]*\)', '', clean).strip()
-                webbrowser.open(f"https://archive.org/search?query={clean.replace(' ', '+')}")
-        self._emit_event('archive.search', f'Searched Archive.org for {len(sel)} missing items')
 
     # ── Force Identify ────────────────────────────────────────────
 
