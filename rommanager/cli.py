@@ -187,6 +187,22 @@ def run_cli(args=None):
     if args.load_collection:
         return _load_collection_mode(args)
 
+    # Direct interface modes
+    if args.web:
+        from .web import run_server
+
+        run_server()
+        return 0
+
+    if args.gui:
+        try:
+            from .gui_flet import run_gui as run_flet_gui
+
+            return run_flet_gui()
+        except ImportError as exc:
+            print(f"Error: Flet GUI is not available ({exc})")
+            return 1
+
     # Check if user tried to run CLI mode without required args
     if not (args.web or args.gui):
         if not args.dat or not args.roms:
