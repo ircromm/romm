@@ -57,7 +57,8 @@ class RetroFlowFletApp:
 
         self.nav_rail: Optional[ft.NavigationRail] = None
         self.main_content = ft.Container(expand=True)
-        self.details_panel = ft.AnimatedContainer(
+        container_cls = getattr(ft, "AnimatedContainer", ft.Container)
+        self.details_panel = container_cls(
             width=0,
             animate=ft.animation.Animation(250, ft.AnimationCurve.EASE_IN_OUT),
             bgcolor=self.CATPPUCCIN["mantle"],
