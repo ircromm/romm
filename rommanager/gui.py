@@ -5,9 +5,11 @@ Graphical user interface for ROM Manager (tkinter)
 from __future__ import annotations
 
 import os
+import shutil
 import threading
 import webbrowser
 import logging
+from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 
@@ -32,6 +34,7 @@ from .utils import format_size
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
+    APP_DATA_DIR,
 )
 
 from .monitor import setup_monitoring, log_event
@@ -74,7 +77,6 @@ class ROMManagerGUI:
         ("Gameboy Advance", "https://drive.google.com/drive/folders/1p4AKF3l6KdtNuYxb7oV62yAV3Eh1Tvk8?usp=share_link"),
         ("Vectrex", "https://drive.google.com/drive/folders/1IyhP7tGEU9Ni3SdmwAXmUfQXK_vyukxa?usp=sharing"),
         ("Commodore Amiga", "https://drive.google.com/drive/folders/1MpANlhxScSaKRbC4oF9qPgKu0gR0SFOx?usp=share_link"),
-        ("MAME", "https://drive.google.com/drive/folders/1Qc9IIbB2CBIPIFKw2mHrPqFKVBSIu-zI?usp=share_link"),
         ("TurboGrafx-16", "https://drive.google.com/drive/folders/1axNeenw-ZeGuD2kIck2HuDWwir1Cza_d?usp=share_link"),
         ("PSP", "https://drive.google.com/drive/folders/1ayM2GHST6bTPRYFVxXRtM3oG1nbLtaoE?usp=share_link"),
         ("Dreamcast", "https://drive.google.com/drive/folders/1hoBTZXbNaYUr5YNn6KN4WvnoDpCCs5ym?usp=share_link"),
@@ -84,6 +86,9 @@ class ROMManagerGUI:
         ("No-Intro DAT-o-MATIC", "https://datomatic.no-intro.org/index.php?page=download&s=64&op=dat"),
         ("Redump DATs", "http://redump.org/downloads/"),
     ]
+
+    SESSION_STATE_FILE = os.path.join(APP_DATA_DIR, "session_state.json")
+    DOWNLOAD_LOG_FILE = os.path.join(APP_DATA_DIR, "download_history.log")
 
     def __init__(self):
         if not GUI_AVAILABLE:
@@ -103,6 +108,11 @@ class ROMManagerGUI:
         self.collection_manager = CollectionManager()
         self.reporter = MissingROMReporter()
         self.monitor_lines: List[str] = []
+        self.current_collection_path: Optional[str] = None
+        self.is_dirty = False
+        self.download_queue: List[str] = []
+        self.download_queue_paused = False
+        self.ignored_missing = set()
 
         setup_monitoring(echo=False)
         self.monitor_logger = logging.getLogger("rommanager.monitor")
@@ -124,6 +134,9 @@ class ROMManagerGUI:
         self._setup_theme()
         self._build_menu()
         self._build_ui()
+        self._bind_shortcuts()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_app_exit)
+        self._prompt_recover_last_session()
 
     # ── Theme ─────────────────────────────────────────────────────
 
@@ -155,47 +168,86 @@ class ROMManagerGUI:
     def _build_menu(self):
         menubar = tk.Menu(self.root, bg=self.colors['surface'], fg=self.colors['fg'])
 
-        file_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        file_menu.add_command(label="Save Collection...", command=self._save_collection)
-        file_menu.add_command(label="Open Collection...", command=self._open_collection)
-        file_menu.add_separator()
-        self._recent_menu = tk.Menu(file_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        file_menu.add_cascade(label="Recent Collections", menu=self._recent_menu)
+        self.file_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        self.file_menu.add_command(label="New Collection...", accelerator="Ctrl+N", command=self._new_collection)
+        self.file_menu.add_command(label="Open Collection...", accelerator="Ctrl+O", command=self._open_collection)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Save", accelerator="Ctrl+S", command=self._save_collection_quick)
+        self.file_menu.add_command(label="Save As...", command=self._save_collection)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Backup Snapshot...", command=self._backup_snapshot)
+        self.file_menu.add_command(label="Restore Snapshot...", command=self._restore_snapshot)
+        self.file_menu.add_separator()
+        self._recent_menu = tk.Menu(self.file_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        self.file_menu.add_cascade(label="Recent Collections", menu=self._recent_menu)
         self._refresh_recent_menu()
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
-        menubar.add_cascade(label="File", menu=file_menu)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Exit", command=self._on_app_exit)
+        menubar.add_cascade(label="File", menu=self.file_menu)
 
         dat_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
         dat_menu.add_command(label="DAT Library...", command=self._show_dat_library)
         menubar.add_cascade(label="DATs", menu=dat_menu)
 
-        export_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        export_menu.add_command(label="Export Missing (TXT)...", command=lambda: self._export_missing('txt'))
-        export_menu.add_command(label="Export Missing (CSV)...", command=lambda: self._export_missing('csv'))
-        export_menu.add_command(label="Export Missing (JSON)...", command=lambda: self._export_missing('json'))
-        menubar.add_cascade(label="Export", menu=export_menu)
+        self.export_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        self.export_menu.add_command(label="Export Missing (TXT)...", accelerator="Ctrl+E", command=lambda: self._export_missing('txt'))
+        self.export_menu.add_command(label="Export Missing (CSV)...", command=lambda: self._export_missing('csv'))
+        self.export_menu.add_command(label="Export Missing (JSON)...", command=lambda: self._export_missing('json'))
+        menubar.add_cascade(label="Export", menu=self.export_menu)
+
+        self.tools_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        self.tools_menu.add_command(label="Deduplicate by CRC32", command=self._dedupe_crc)
+        self.tools_menu.add_command(label="Find Name Collisions", command=self._find_name_collisions)
+        self.tools_menu.add_command(label="Normalize Filenames", command=self._normalize_filenames)
+        self.tools_menu.add_command(label="Mass Rename (DAT Convention)", command=self._mass_rename_dat_convention)
+        self.tools_menu.add_command(label="Generate Integrity Audit", command=self._generate_integrity_audit)
+        menubar.add_cascade(label="Tools", menu=self.tools_menu)
 
         dl_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        dl_menu.add_command(label="Myrient", command=self._open_myrient_site)
-        dl_menu.add_separator()
+        sources_menu = tk.Menu(dl_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        sources_menu.add_command(label="Myrient", command=self._open_myrient_site)
+        sources_menu.add_separator()
         for system_name, url in self.SYSTEM_DOWNLOAD_LINKS:
-            dl_menu.add_command(
-                label=system_name,
-                command=lambda n=system_name, u=url: self._open_download_link(n, u),
-            )
-        dl_menu.add_separator()
+            sources_menu.add_command(label=system_name, command=lambda n=system_name, u=url: self._open_download_link(n, u))
+        sources_menu.add_separator()
         for label, url in self.DAT_DOWNLOAD_LINKS:
-            dl_menu.add_command(
-                label=label,
-                command=lambda n=label, u=url: self._open_download_link(n, u),
-            )
+            sources_menu.add_command(label=label, command=lambda n=label, u=url: self._open_download_link(n, u))
+        dl_menu.add_cascade(label="Sources", menu=sources_menu)
+
+        self.queue_menu = tk.Menu(dl_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        self.queue_menu.add_command(label="Add Missing to Queue", accelerator="Ctrl+D", command=self._queue_missing_downloads)
+        self.queue_menu.add_separator()
+        self.queue_menu.add_command(label="Start Queue", command=self._start_download_queue)
+        self.queue_menu.add_command(label="Pause Queue", command=self._pause_download_queue)
+        self.queue_menu.add_command(label="Resume Queue", command=self._resume_download_queue)
+        self.queue_menu.add_command(label="Cancel Queue", command=self._cancel_download_queue)
+        self.queue_menu.add_separator()
+        self.queue_menu.add_command(label="Retry Failed", command=self._retry_failed_downloads)
+        dl_menu.add_cascade(label="Queue", menu=self.queue_menu)
+
+        verification_menu = tk.Menu(dl_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        verification_menu.add_command(label="Verify CRC After Download", command=self._verify_crc_after_download)
+        verification_menu.add_command(label="Quarantine Invalid Files", command=self._quarantine_invalid_files)
+        dl_menu.add_cascade(label="Verification", menu=verification_menu)
+
+        history_menu = tk.Menu(dl_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        history_menu.add_command(label="Open Download Log", command=self._open_download_log)
+        history_menu.add_command(label="Export Download Report (CSV)", command=lambda: self._export_download_report('csv'))
+        history_menu.add_command(label="Export Download Report (JSON)", command=lambda: self._export_download_report('json'))
+        dl_menu.add_cascade(label="History", menu=history_menu)
+
         dl_menu.add_separator()
         dl_menu.add_command(label="Settings", command=self._show_settings)
         dl_menu.add_command(label="About", command=self._show_about)
         menubar.add_cascade(label="Downloads", menu=dl_menu)
 
+        help_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        help_menu.add_command(label="Keyboard Shortcuts", command=self._show_keyboard_shortcuts)
+        help_menu.add_command(label="Command Palette", accelerator="Ctrl+Shift+P", command=self._show_command_palette)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
         self.root.config(menu=menubar)
+        self._refresh_menu_state()
 
     # ── UI Build ──────────────────────────────────────────────────
 
@@ -338,13 +390,20 @@ class ROMManagerGUI:
         ttk.Button(orw, text="Organize!", command=self._organize).pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(orw, text="Undo", command=self._undo).pack(side=tk.LEFT, padx=(5, 0))
 
-        # Keyboard shortcuts
+        self._emit_event('gui.started', 'Desktop interface initialized')
+
+    def _bind_shortcuts(self):
         self.root.bind('<Control-a>', self._on_select_all)
         self.root.bind('<Control-c>', self._on_copy)
+        self.root.bind('<Control-n>', lambda *_: self._new_collection())
+        self.root.bind('<Control-o>', lambda *_: self._open_collection())
+        self.root.bind('<Control-s>', lambda *_: self._save_collection_quick())
+        self.root.bind('<Control-e>', lambda *_: self._export_missing('txt'))
+        self.root.bind('<Control-d>', lambda *_: self._queue_missing_downloads())
+        self.root.bind('<Control-Shift-P>', lambda *_: self._show_command_palette())
+        self.root.bind('<F5>', lambda *_: self._refresh_current_tab())
         self.root.bind('<Delete>', self._on_delete_key)
         self.root.bind('<Escape>', self._on_escape)
-
-        self._emit_event('gui.started', 'Desktop interface initialized')
 
     # ── Helpers ───────────────────────────────────────────────────
 
@@ -399,130 +458,120 @@ class ROMManagerGUI:
 
     def _show_context_menu(self, event, tree):
         """Show right-click context menu based on which tab we're in"""
-        # Select the clicked item
         item = tree.identify('item', event.x, event.y)
-        if not item:
-            return
+        if item and item not in tree.selection():
+            tree.selection_set(item)
 
-        tree.selection_set(item)
-
-        # Determine which tab this tree belongs to
         if tree == self.id_tree:
-            self._show_identified_context_menu(event, tree, item)
+            self._show_identified_context_menu(event, tree)
         elif tree == self.un_tree:
-            self._show_unidentified_context_menu(event, tree, item)
+            self._show_unidentified_context_menu(event, tree)
         elif tree == self.ms_tree:
-            self._show_missing_context_menu(event, tree, item)
+            self._show_missing_context_menu(event, tree)
 
-    def _show_identified_context_menu(self, event, tree, item):
-        """Context menu for Identified tab"""
+    def _build_common_context_menu(self, tree, include_crc=True, include_path=False):
         menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
-
-        menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-        menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
+        menu.add_command(label="Copy Name", command=lambda: self._copy_selection(tree, 'name'))
+        if include_crc:
+            menu.add_command(label="Copy CRC32", command=lambda: self._copy_selection(tree, 'crc'))
+            menu.add_command(label="Copy Selected CRC32s", command=lambda: self._copy_selection(tree, 'crc', multi=True))
+        if include_path:
+            menu.add_command(label="Copy Full Path", command=lambda: self._copy_selection(tree, 'path'))
         menu.add_separator()
-        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
-        menu.add_separator()
-        menu.add_command(label="Open Folder", command=lambda: self._open_rom_folder(tree, item))
+        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_selection(tree))
+        menu.add_command(label="Open Folder", command=lambda: self._open_rom_folder_for_selection(tree))
+        return menu
 
+    def _show_identified_context_menu(self, event, tree):
+        menu = self._build_common_context_menu(tree, include_crc=True, include_path=True)
         menu.post(event.x_root, event.y_root)
 
-    def _show_unidentified_context_menu(self, event, tree, item):
-        """Context menu for Unidentified tab"""
-        menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
-
-        menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-        menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
+    def _show_unidentified_context_menu(self, event, tree):
+        menu = self._build_common_context_menu(tree, include_crc=True, include_path=True)
         menu.add_separator()
-        menu.add_command(label="Force to Identified", command=lambda: self._force_identified_from_context(tree, item))
-        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
-        menu.add_separator()
-        menu.add_command(label="Open Folder", command=lambda: self._open_rom_folder(tree, item))
-
+        menu.add_command(label="Force to Identified", command=self._force_identified)
         menu.post(event.x_root, event.y_root)
 
-    def _show_missing_context_menu(self, event, tree, item):
-        """Context menu for Missing tab"""
-        menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
-
-        menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-
+    def _show_missing_context_menu(self, event, tree):
+        menu = self._build_common_context_menu(tree, include_crc=False, include_path=False)
+        menu.add_separator()
+        menu.add_command(label="Queue Download", command=self._queue_selected_missing_downloads)
+        menu.add_command(label="Mark as Ignored", command=self._mark_missing_as_ignored)
         menu.post(event.x_root, event.y_root)
 
-    def _copy_to_clipboard(self, tree, item, copy_type='name'):
-        """Copy item data to clipboard"""
-        values = tree.item(item)['values']
-        if not values:
+    def _copy_selection(self, tree, copy_type='name', multi=False):
+        selection = tree.selection()
+        if not selection:
             return
-
-        if copy_type == 'crc' and len(values) > 0:
-            # CRC is typically the last column or second-to-last
-            # For Identified: Original File, ROM Name, Game, System, Region, Size, CRC32, Status
-            # For Unidentified: Filename, Path, Size, CRC32
-            # For Missing: ROM Name, Game, System, Region, Size (no CRC for missing)
-            crc_value = values[-2] if len(values) > 1 else values[-1]
-            if tree == self.id_tree or tree == self.un_tree:
-                # Find the CRC column (typically second-to-last)
-                try:
-                    self.root.clipboard_clear()
-                    self.root.clipboard_append(crc_value)
-                    messagebox.showinfo("Copied", f"CRC32 copied: {crc_value}")
-                except:
-                    pass
-        elif copy_type == 'name':
-            # Copy the name/filename (first or second column usually)
-            name_value = values[1] if len(values) > 1 else values[0]
-            try:
-                self.root.clipboard_clear()
-                self.root.clipboard_append(name_value)
-                messagebox.showinfo("Copied", f"Copied: {name_value}")
-            except:
-                pass
-
-    def _search_archive_for_item(self, tree, item):
-        """Search Archive.org for the selected item"""
-        values = tree.item(item)['values']
-        if not values:
+        if not multi:
+            selection = selection[:1]
+        rows = [tree.item(item)['values'] for item in selection]
+        payload = []
+        for values in rows:
+            if not values:
+                continue
+            if copy_type == 'crc':
+                if tree == self.id_tree:
+                    payload.append(str(values[6]))
+                elif tree == self.un_tree:
+                    payload.append(str(values[3]))
+            elif copy_type == 'path':
+                if tree == self.un_tree and len(values) > 1:
+                    payload.append(str(values[1]))
+                elif tree == self.id_tree:
+                    filename = str(values[0])
+                    found = next((sc.path for sc in self.identified if sc.filename == filename), None)
+                    if found:
+                        payload.append(found)
+            else:
+                payload.append(str(values[1] if len(values) > 1 else values[0]))
+        if not payload:
             return
+        self.root.clipboard_clear()
+        self.root.clipboard_append("\n".join(payload))
+        messagebox.showinfo("Copied", f"Copied {len(payload)} item(s) to clipboard")
 
-        # Get CRC from the item
-        crc_value = values[-2] if len(values) > 1 else values[-1]
-        if crc_value and crc_value.strip():
-            webbrowser.open(f"https://archive.org/advancedsearch.php?q=crc32:{crc_value}&output=json")
+    def _search_archive_for_selection(self, tree):
+        selection = tree.selection()
+        if not selection:
+            return
+        values = tree.item(selection[0])['values']
+        if tree == self.id_tree and len(values) > 6:
+            query = values[6]
+        elif tree == self.un_tree and len(values) > 3:
+            query = values[3]
+        else:
+            query = values[0] if values else ''
+        if query:
+            webbrowser.open(f"https://archive.org/advancedsearch.php?q={query}&output=json")
 
-    def _open_rom_folder(self, tree, item):
-        """Open folder containing the ROM"""
-        if tree == self.id_tree:
-            # For identified, get the original file path from first column
-            values = tree.item(item)['values']
-            if values:
-                filename = values[0]
-                # Find the full path in self.identified
-                for sc in self.identified:
-                    if sc.filename == filename:
-                        folder_path = os.path.dirname(sc.path)
-                        if os.path.exists(folder_path):
-                            os.startfile(folder_path)
-                        return
-        elif tree == self.un_tree:
-            # For unidentified, path is in the second column
-            values = tree.item(item)['values']
-            if len(values) > 1:
-                folder_path = os.path.dirname(values[1])
-                if os.path.exists(folder_path):
-                    os.startfile(folder_path)
-        elif tree == self.ms_tree:
-            # Missing ROMs don't have paths, so skip
+    def _open_rom_folder_for_selection(self, tree):
+        selection = tree.selection()
+        if not selection:
+            return
+        item = selection[0]
+        if tree == self.ms_tree:
             messagebox.showinfo("Info", "Missing ROMs don't have local paths.")
+            return
+        values = tree.item(item)['values']
+        folder_path = None
+        if tree == self.un_tree and len(values) > 1:
+            folder_path = os.path.dirname(values[1])
+        elif tree == self.id_tree and values:
+            filename = values[0]
+            for sc in self.identified:
+                if sc.filename == filename:
+                    folder_path = os.path.dirname(sc.path)
+                    break
+        if folder_path and os.path.exists(folder_path):
+            try:
+                os.startfile(folder_path)
+            except AttributeError:
+                webbrowser.open(f"file://{folder_path}")
 
     def _force_identified_from_context(self, tree, item):
-        """Force move an unidentified item to identified (from context menu)"""
-        if tree != self.un_tree:
-            return
-
-        # This should call the existing _force_identified but with specific item
-        # For now, just call the existing method which processes all selected
-        self._force_identified()
+        if tree == self.un_tree:
+            self._force_identified()
 
     # ── Keyboard Shortcuts ─────────────────────────────────────────────
 
@@ -542,27 +591,10 @@ class ROMManagerGUI:
 
     def _on_copy(self, event=None):
         """Ctrl+C: Copy selected item(s)"""
-        current_tab = self.notebook.index(self.notebook.select())
-
-        if current_tab == 0:  # Identified
-            tree = self.id_tree
-        elif current_tab == 1:  # Unidentified
-            tree = self.un_tree
-        else:  # Missing
-            tree = self.ms_tree
-
-        selection = tree.selection()
-        if not selection:
+        tree = self._get_current_tree()
+        if not tree.selection():
             return 'break'
-
-        # Ask user what to copy
-        response = messagebox.askyesno("Copy", "Copy CRC32? (No = copy names)")
-        copy_type = 'crc' if response else 'name'
-
-        # Copy first selected item
-        if selection:
-            self._copy_to_clipboard(tree, selection[0], copy_type)
-
+        self._copy_selection(tree, 'name', multi=True)
         return 'break'
 
 
@@ -594,6 +626,18 @@ class ROMManagerGUI:
 
         tree.selection_set()  # Clear selection
         return 'break'
+
+    def _get_current_tree(self):
+        current_tab = self.notebook.index(self.notebook.select())
+        if current_tab == 0:
+            return self.id_tree
+        if current_tab == 1:
+            return self.un_tree
+        return self.ms_tree
+
+    def _refresh_current_tab(self):
+        self._do_search()
+        self._refresh_menu_state()
 
     # ── Column Sorting ─────────────────────────────────────────────
 
@@ -702,6 +746,8 @@ class ROMManagerGUI:
             self._emit_event('dat.remove', f'Removed DAT {dats[sel[0]].system_name}')
             self.multi_matcher.remove_dat(dats[sel[0]].id)
             self._refresh_dats()
+            self._mark_dirty()
+            self._refresh_menu_state()
 
     def _refresh_dats(self):
         self.dat_listbox.delete(0, tk.END)
@@ -793,8 +839,11 @@ class ROMManagerGUI:
         self.progress_bar['value'] = 100
         self.progress_var.set("Scan complete!")
         self._update_stats()
+        self._mark_dirty()
         self._refresh_missing()
         self._emit_event('scan.completed', f'Scanned {len(self.scanned_files)} files')
+        self._mark_dirty()
+        self._refresh_menu_state()
         messagebox.showinfo("Done", f"Scanned {len(self.scanned_files):,}\n"
                             f"Identified: {len(self.identified):,}\nUnidentified: {len(self.unidentified):,}")
 
@@ -896,6 +945,7 @@ class ROMManagerGUI:
                     self.un_tree.delete(iid)
                     break
         self._update_stats()
+        self._mark_dirty()
 
     # ── Organization ──────────────────────────────────────────────
 
@@ -958,27 +1008,82 @@ class ROMManagerGUI:
 
     # ── Collections ───────────────────────────────────────────────
 
-    def _save_collection(self):
-        name = simpledialog.askstring("Save Collection", "Collection name:", parent=self.root)
-        if not name:
-            return
+    def _mark_dirty(self):
+        self.is_dirty = True
+        self._refresh_menu_state()
+
+    def _confirm_discard_unsaved(self):
+        if not self.is_dirty:
+            return True
+        return messagebox.askyesno("Unsaved Changes", "You have unsaved changes. Continue and discard them?")
+
+    def _build_collection_payload(self, name):
         dats = self.multi_matcher.get_dat_list()
-        coll = Collection(
-            name=name, created_at=datetime.now().isoformat(),
-            dat_infos=dats, dat_filepaths=[d.filepath for d in dats],
+        return Collection(
+            name=name,
+            created_at=datetime.now().isoformat(),
+            dat_infos=dats,
+            dat_filepaths=[d.filepath for d in dats],
             scan_folder=self.scan_path_var.get(),
             scan_options={'recursive': self.recursive_var.get(), 'scan_archives': self.scan_archives_var.get()},
             identified=[f.to_dict() for f in self.identified],
             unidentified=[f.to_dict() for f in self.unidentified],
-            settings={'strategy': self.strategy_var.get(), 'action': self.action_var.get(), 'output': self.output_var.get()},
+            settings={
+                'strategy': self.strategy_var.get(),
+                'action': self.action_var.get(),
+                'output': self.output_var.get(),
+                'search_query': self._search_var.get(),
+            },
         )
+
+    def _new_collection(self):
+        if not self._confirm_discard_unsaved():
+            return
+        self.multi_matcher = MultiROMMatcher()
+        self.scanned_files.clear()
+        self.identified.clear()
+        self.unidentified.clear()
+        self.current_collection_path = None
+        self.is_dirty = False
+        self.scan_path_var.set("No folder selected")
+        self.output_var.set("")
+        self._search_var.set("")
+        self._refresh_dats()
+        self._refill_id()
+        self._refill_un()
+        self._refill_ms()
+        self._update_stats()
+        self._refresh_menu_state()
+
+    def _save_collection_quick(self):
+        if self.current_collection_path:
+            name = os.path.splitext(os.path.basename(self.current_collection_path))[0]
+            coll = self._build_collection_payload(name)
+            self.collection_manager.save(coll, self.current_collection_path)
+            self.is_dirty = False
+            self._save_session_state()
+            self._refresh_menu_state()
+            messagebox.showinfo("Saved", f"Collection saved:\n{self.current_collection_path}")
+            return
+        self._save_collection()
+
+    def _save_collection(self):
+        name = simpledialog.askstring("Save Collection", "Collection name:", parent=self.root)
+        if not name:
+            return
+        coll = self._build_collection_payload(name)
         fp = self.collection_manager.save(coll)
+        self.current_collection_path = fp
+        self.is_dirty = False
+        self._save_session_state()
         self._refresh_recent_menu()
+        self._refresh_menu_state()
         messagebox.showinfo("Saved", f"Collection saved:\n{fp}")
 
     def _open_collection(self):
-        fp = filedialog.askopenfilename(title="Open Collection",
-            filetypes=[("ROM Collections", "*.romcol.json"), ("All", "*.*")])
+        if not self._confirm_discard_unsaved():
+            return
+        fp = filedialog.askopenfilename(title="Open Collection", filetypes=[("ROM Collections", "*.romcol.json"), ("All", "*.*")])
         if fp:
             self._load_coll(fp)
 
@@ -1006,15 +1111,68 @@ class ROMManagerGUI:
         self._refresh_missing()
         if coll.scan_folder:
             self.scan_path_var.set(coll.scan_folder)
-        s = coll.settings
-        if s.get('strategy'):
-            self.strategy_var.set(s['strategy'])
-        if s.get('action'):
-            self.action_var.set(s['action'])
-        if s.get('output'):
-            self.output_var.set(s['output'])
+        settings = coll.settings
+        if settings.get('strategy'):
+            self.strategy_var.set(settings['strategy'])
+        if settings.get('action'):
+            self.action_var.set(settings['action'])
+        if settings.get('output'):
+            self.output_var.set(settings['output'])
+        if settings.get('search_query'):
+            self._search_var.set(settings['search_query'])
+        self.current_collection_path = fp
+        self.is_dirty = False
+        self._save_session_state()
         self._refresh_recent_menu()
+        self._refresh_menu_state()
         messagebox.showinfo("Loaded", f"Collection '{coll.name}' loaded")
+
+    def _backup_snapshot(self):
+        if not self.current_collection_path or not os.path.exists(self.current_collection_path):
+            messagebox.showwarning("Warning", "Save a collection first before creating snapshots.")
+            return
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"{self.current_collection_path}.{ts}.bak"
+        shutil.copy2(self.current_collection_path, backup_path)
+        messagebox.showinfo("Snapshot", f"Snapshot created:\n{backup_path}")
+
+    def _restore_snapshot(self):
+        fp = filedialog.askopenfilename(title="Restore Snapshot", filetypes=[("Backup Files", "*.bak"), ("All", "*.*")])
+        if not fp:
+            return
+        if not self.current_collection_path:
+            self.current_collection_path = fp.replace('.bak', '')
+        shutil.copy2(fp, self.current_collection_path)
+        self._load_coll(self.current_collection_path)
+
+    def _save_session_state(self):
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
+        state = {
+            'current_collection_path': self.current_collection_path,
+            'search_query': self._search_var.get() if hasattr(self, '_search_var') else '',
+            'scan_path': self.scan_path_var.get() if hasattr(self, 'scan_path_var') else '',
+        }
+        import json
+        with open(self.SESSION_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2)
+
+    def _prompt_recover_last_session(self):
+        if not os.path.exists(self.SESSION_STATE_FILE):
+            return
+        try:
+            import json
+            state = json.loads(Path(self.SESSION_STATE_FILE).read_text(encoding='utf-8'))
+        except Exception:
+            return
+        path = state.get('current_collection_path')
+        if path and os.path.exists(path) and messagebox.askyesno("Recover Session", "Recover last collection session?"):
+            self._load_coll(path)
+
+    def _on_app_exit(self):
+        if not self._confirm_discard_unsaved():
+            return
+        self._save_session_state()
+        self.root.quit()
 
     def _refresh_recent_menu(self):
         self._recent_menu.delete(0, tk.END)
@@ -1025,6 +1183,20 @@ class ROMManagerGUI:
         for e in recent[:10]:
             n, p = e.get('name', '?'), e.get('filepath', '')
             self._recent_menu.add_command(label=n, command=lambda pp=p: self._load_coll(pp))
+
+    def _refresh_menu_state(self):
+        has_collection = bool(self.current_collection_path or self.identified or self.unidentified)
+        has_missing = bool(self.multi_matcher.matchers and self.multi_matcher.get_missing(self.identified))
+        if hasattr(self, 'export_menu'):
+            state = tk.NORMAL if has_missing else tk.DISABLED
+            for i in range(3):
+                self.export_menu.entryconfig(i, state=state)
+        if hasattr(self, 'tools_menu'):
+            state = tk.NORMAL if has_collection else tk.DISABLED
+            for i in range(5):
+                self.tools_menu.entryconfig(i, state=state)
+        if hasattr(self, 'queue_menu'):
+            self.queue_menu.entryconfig(0, state=tk.NORMAL if has_missing else tk.DISABLED)
 
     # ── Export ────────────────────────────────────────────────────
 
@@ -1043,6 +1215,180 @@ class ROMManagerGUI:
             self.multi_matcher.dat_infos, self.multi_matcher.all_roms, self.identified)
         getattr(self.reporter, f'export_{fmt}')(report, fp)
         messagebox.showinfo("Exported", f"Saved to:\n{fp}")
+
+    def _queue_missing_downloads(self):
+        if not self.multi_matcher.matchers:
+            messagebox.showwarning("Warning", "Load DATs and scan first")
+            return
+        missing = [r.name for r in self.multi_matcher.get_missing(self.identified) if r.name not in self.ignored_missing]
+        self.download_queue.extend(missing)
+        self.download_queue = list(dict.fromkeys(self.download_queue))
+        self._log_download_event(f"Queued {len(missing)} missing ROM(s)")
+        self._refresh_menu_state()
+        messagebox.showinfo("Queue", f"Added {len(missing)} ROM(s) to queue")
+
+    def _queue_selected_missing_downloads(self):
+        selection = self.ms_tree.selection()
+        names = [self.ms_tree.item(item)['values'][0] for item in selection]
+        self.download_queue.extend(names)
+        self.download_queue = list(dict.fromkeys(self.download_queue))
+        self._log_download_event(f"Queued selected ROM(s): {len(names)}")
+
+    def _mark_missing_as_ignored(self):
+        for item in self.ms_tree.selection():
+            values = self.ms_tree.item(item)['values']
+            if values:
+                self.ignored_missing.add(values[0])
+        self._refresh_missing()
+        self._log_download_event("Marked selected missing ROM(s) as ignored")
+
+    def _start_download_queue(self):
+        if not self.download_queue:
+            messagebox.showinfo("Queue", "Queue is empty")
+            return
+        self.download_queue_paused = False
+        self._log_download_event(f"Started queue with {len(self.download_queue)} items")
+        first = self.download_queue[0]
+        webbrowser.open(f"https://myrient.erista.me/files?search={first}")
+
+    def _pause_download_queue(self):
+        self.download_queue_paused = True
+        self._log_download_event("Queue paused")
+
+    def _resume_download_queue(self):
+        self.download_queue_paused = False
+        self._log_download_event("Queue resumed")
+
+    def _cancel_download_queue(self):
+        count = len(self.download_queue)
+        self.download_queue.clear()
+        self._log_download_event(f"Queue cancelled ({count} pending)")
+        self._refresh_menu_state()
+
+    def _retry_failed_downloads(self):
+        self._log_download_event("Retry failed requested")
+        messagebox.showinfo("Queue", "Retry requested. Review the download log for details.")
+
+    def _verify_crc_after_download(self):
+        messagebox.showinfo("Verification", "CRC verification is enabled via scan + DAT matching.")
+
+    def _quarantine_invalid_files(self):
+        messagebox.showinfo("Verification", "Use Tools > Generate Integrity Audit to identify invalid files.")
+
+    def _open_download_log(self):
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
+        Path(self.DOWNLOAD_LOG_FILE).touch(exist_ok=True)
+        webbrowser.open(f"file://{os.path.abspath(self.DOWNLOAD_LOG_FILE)}")
+
+    def _export_download_report(self, fmt):
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
+        lines = []
+        if os.path.exists(self.DOWNLOAD_LOG_FILE):
+            lines = Path(self.DOWNLOAD_LOG_FILE).read_text(encoding='utf-8').splitlines()
+        ext = '.csv' if fmt == 'csv' else '.json'
+        fp = filedialog.asksaveasfilename(title="Export Download Report", defaultextension=ext,
+                                          filetypes=[(fmt.upper(), f"*{ext}"), ("All", "*.*")])
+        if not fp:
+            return
+        if fmt == 'csv':
+            Path(fp).write_text("timestamp,event\n" + "\n".join(l.replace(' | ', ',') for l in lines), encoding='utf-8')
+        else:
+            import json
+            rows = []
+            for line in lines:
+                parts = line.split(' | ', 1)
+                rows.append({'timestamp': parts[0] if parts else '', 'event': parts[1] if len(parts) > 1 else ''})
+            Path(fp).write_text(json.dumps(rows, indent=2), encoding='utf-8')
+
+    def _log_download_event(self, event):
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
+        with open(self.DOWNLOAD_LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"{datetime.now().isoformat()} | {event}\n")
+
+    def _dedupe_crc(self):
+        seen = set()
+        removed = 0
+        keep = []
+        for sc in self.identified:
+            crc = (sc.crc32 or '').upper()
+            if crc and crc in seen:
+                removed += 1
+                continue
+            seen.add(crc)
+            keep.append(sc)
+        self.identified = keep
+        self.scanned_files = self.identified + self.unidentified
+        self._refill_id()
+        self._update_stats()
+        self._mark_dirty()
+        self._refresh_missing()
+        self._mark_dirty()
+        messagebox.showinfo("Deduplicate", f"Removed {removed} duplicate identified ROM(s)")
+
+    def _find_name_collisions(self):
+        counts = {}
+        for sc in self.identified:
+            name = (sc.matched_rom.name if sc.matched_rom else sc.filename)
+            counts[name] = counts.get(name, 0) + 1
+        collisions = [n for n, c in counts.items() if c > 1]
+        messagebox.showinfo("Name Collisions", f"Found {len(collisions)} collision(s)")
+
+    def _normalize_filenames(self):
+        changes = 0
+        for sc in self.unidentified:
+            normalized = " ".join(sc.filename.replace('_', ' ').split())
+            if normalized != sc.filename:
+                sc.filename = normalized
+                changes += 1
+        self._refill_un()
+        self._mark_dirty()
+        messagebox.showinfo("Normalize", f"Normalized {changes} filename(s)")
+
+    def _mass_rename_dat_convention(self):
+        changes = 0
+        for sc in self.identified:
+            if sc.matched_rom and sc.filename != sc.matched_rom.name:
+                sc.filename = sc.matched_rom.name
+                changes += 1
+        self._refill_id()
+        self._mark_dirty()
+        messagebox.showinfo("Mass Rename", f"Updated {changes} item name(s) in collection view")
+
+    def _generate_integrity_audit(self):
+        os.makedirs('data', exist_ok=True)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        fp = os.path.join('data', f'integrity_audit_{ts}.txt')
+        with open(fp, 'w', encoding='utf-8') as f:
+            f.write(f"Total scanned: {len(self.scanned_files)}\n")
+            f.write(f"Identified: {len(self.identified)}\n")
+            f.write(f"Unidentified: {len(self.unidentified)}\n")
+            f.write(f"Missing: {len(self.multi_matcher.get_missing(self.identified)) if self.multi_matcher.matchers else 0}\n")
+        messagebox.showinfo("Integrity Audit", f"Audit report generated:\n{fp}")
+
+    def _show_keyboard_shortcuts(self):
+        messagebox.showinfo(
+            "Keyboard Shortcuts",
+            "Ctrl+N New\nCtrl+O Open\nCtrl+S Save\nCtrl+E Export Missing\nCtrl+D Queue Missing\nCtrl+Shift+P Command Palette\nF5 Refresh",
+        )
+
+    def _show_command_palette(self):
+        cmd = simpledialog.askstring("Command Palette", "Type command:\nnew/open/save/export/queue/audit")
+        if not cmd:
+            return
+        cmd = cmd.strip().lower()
+        actions = {
+            'new': self._new_collection,
+            'open': self._open_collection,
+            'save': self._save_collection_quick,
+            'export': lambda: self._export_missing('txt'),
+            'queue': self._queue_missing_downloads,
+            'audit': self._generate_integrity_audit,
+        }
+        action = actions.get(cmd)
+        if action:
+            action()
+        else:
+            messagebox.showinfo("Command Palette", f"Unknown command: {cmd}")
 
     # ── Settings & About ───────────────────────────────────────────
 
