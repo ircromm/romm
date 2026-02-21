@@ -57,13 +57,21 @@ class RetroFlowFletApp:
 
         self.nav_rail: Optional[ft.NavigationRail] = None
         self.main_content = ft.Container(expand=True)
-        self.details_panel = ft.AnimatedContainer(
-            width=0,
-            animate=ft.animation.Animation(250, ft.AnimationCurve.EASE_IN_OUT),
-            bgcolor=self.CATPPUCCIN["mantle"],
-            padding=16,
-            content=ft.Container(),
-        )
+        container_cls = getattr(ft, "AnimatedContainer", ft.Container)
+        animation_module = getattr(ft, "animation", None)
+        animation_cls = getattr(animation_module, "Animation", getattr(ft, "Animation", None))
+        details_panel_animation = animation_cls(250, ft.AnimationCurve.EASE_IN_OUT) if animation_cls else None
+
+        details_panel_kwargs = {
+            "width": 0,
+            "bgcolor": self.CATPPUCCIN["mantle"],
+            "padding": 16,
+            "content": ft.Container(),
+        }
+        if details_panel_animation is not None:
+            details_panel_kwargs["animate"] = details_panel_animation
+
+        self.details_panel = container_cls(**details_panel_kwargs)
         self.library_grid = ft.GridView(
             runs_count=5,
             max_extent=220,
