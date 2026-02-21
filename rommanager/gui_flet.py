@@ -60,7 +60,7 @@ class RetroFlowFletApp:
         container_cls = getattr(ft, "AnimatedContainer", ft.Container)
         self.details_panel = container_cls(
             width=0,
-            animate=ft.animation.Animation(250, ft.AnimationCurve.EASE_IN_OUT),
+            animate=ft.Animation(duration=250, curve=ft.AnimationCurve.EASE_IN_OUT),
             bgcolor=self.CATPPUCCIN["mantle"],
             padding=16,
             content=ft.Container(),
