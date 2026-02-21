@@ -16,20 +16,6 @@ from .scanner import FileScanner
 from .utils import format_size
 
 
-def _compat_animation(duration_ms: int = 250):
-    """Return an animation object compatible with old/new Flet releases."""
-    animation_namespace = getattr(ft, "animation", None)
-    curve = getattr(ft, "AnimationCurve", None)
-
-    if animation_namespace and hasattr(animation_namespace, "Animation") and curve:
-        return animation_namespace.Animation(duration_ms, curve.EASE_IN_OUT)
-
-    if hasattr(ft, "Animation") and curve:
-        return ft.Animation(duration_ms, curve.EASE_IN_OUT)
-
-    return None
-
-
 class RetroFlowFletApp:
     """Main Flet application shell implementing progressive disclosure UI."""
 
@@ -71,9 +57,9 @@ class RetroFlowFletApp:
 
         self.nav_rail: Optional[ft.NavigationRail] = None
         self.main_content = ft.Container(expand=True)
-        self.details_panel = ft.Container(
+        self.details_panel = ft.AnimatedContainer(
             width=0,
-            animate=_compat_animation(250),
+            animate=ft.animation.Animation(250, ft.AnimationCurve.EASE_IN_OUT),
             bgcolor=self.CATPPUCCIN["mantle"],
             padding=16,
             content=ft.Container(),
@@ -119,7 +105,7 @@ class RetroFlowFletApp:
                     spacing=4,
                     horizontal_alignment=ft.CrossAxisAlignment.START,
                 ),
-                padding=ft.padding.all(20),
+                padding=ft.Padding(20, 20, 20, 20),
             ),
             destinations=[
                 ft.NavigationRailDestination(icon=ft.icons.DASHBOARD_OUTLINED, selected_icon=ft.icons.DASHBOARD, label="Dashboard"),
@@ -134,7 +120,7 @@ class RetroFlowFletApp:
             controls=[
                 self.nav_rail,
                 ft.VerticalDivider(width=1, color=self.CATPPUCCIN["surface0"]),
-                self.main_content,
+                ft.Expanded(self.main_content),
                 self.details_panel,
             ],
             spacing=0,
@@ -278,7 +264,7 @@ class RetroFlowFletApp:
                                     top=8,
                                     bgcolor=badge_color,
                                     border_radius=8,
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                                    padding=ft.Padding(8, 3, 8, 3),
                                     content=ft.Text(region, size=10, color=self.CATPPUCCIN["crust"], weight=ft.FontWeight.W_700),
                                 ),
                             ]
