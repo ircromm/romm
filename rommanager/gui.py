@@ -55,14 +55,44 @@ class TkMonitorHandler(logging.Handler):
 class ROMManagerGUI:
     """Main GUI application"""
 
+    SYSTEM_DOWNLOAD_LINKS = [
+        ("Gamecube", "https://drive.google.com/drive/folders/1sa14fWIzzZgADgVr5mOysmXY939HWrX2?usp=share_link"),
+        ("Nintendo 64", "https://drive.google.com/drive/folders/1zZbCA3vlpWjLJCvRgu-w0WgFXSckY33J?usp=sharing"),
+        ("Super Nintendo", "https://drive.google.com/drive/folders/1A_aPM42CHjV0fPh7HmlS8mAWZA5pEt23?usp=sharing"),
+        ("Wii-Ware", "https://drive.google.com/drive/folders/1o-g-f5BNp_v9YOIU9Os1D4IsTc1oMnbf?usp=share_link"),
+        ("PSX", "https://drive.google.com/drive/folders/1pt_w6WrJMw3TBc02xInbquzY6IGvKIij?usp=share_link"),
+        ("PS2", "https://drive.google.com/drive/folders/1D9WPT6TZVQgdzfUv-_h6bkfGf0kD9WUY?usp=drive_link"),
+        ("VIC20", "https://drive.google.com/drive/folders/1ib_WRgXhFx_wvIIMXHuvB7qfsFDWfGnc?usp=share_link"),
+        ("Atari Lynx", "https://drive.google.com/drive/folders/1DpOZ61Ksb9oqyEb1Vxiwx4scRFpEBgA5?usp=share_link"),
+        ("Atari Jaguar", "https://drive.google.com/drive/folders/1zEl-KhZFlQOvXTPHMhXtpd7IHvyiuhUu?usp=share_link"),
+        ("Wii U", "https://drive.google.com/drive/folders/1bDMQ7hehTkgoDwOewtgtjPP0URPfecza?usp=share_link"),
+        ("3DS", "https://drive.google.com/drive/folders/1qY41Om305_LrI2-brD32DG2OGh4rHvt6?usp=share_link"),
+        ("NES", "https://drive.google.com/drive/folders/1iX6GbROUnYURdFD_ILi_lGQBXOR2xVK-?usp=share_link"),
+        ("Nintendo DS", "https://drive.google.com/drive/folders/1txkPl-x5qfPFQtLQ-7nH82x5rs7JOczv?usp=share_link"),
+        ("Atari 2600", "https://drive.google.com/drive/folders/14idkQUxxkyI0Szs1P3dSG2rLP-NBC66M?usp=share_link"),
+        ("Gameboy Color", "https://drive.google.com/drive/folders/12BSJRAlt_1fg_0acrkp7emDHu-4e6hMv?usp=share_link"),
+        ("Gameboy Advance", "https://drive.google.com/drive/folders/1p4AKF3l6KdtNuYxb7oV62yAV3Eh1Tvk8?usp=share_link"),
+        ("Vectrex", "https://drive.google.com/drive/folders/1IyhP7tGEU9Ni3SdmwAXmUfQXK_vyukxa?usp=sharing"),
+        ("Commodore Amiga", "https://drive.google.com/drive/folders/1MpANlhxScSaKRbC4oF9qPgKu0gR0SFOx?usp=share_link"),
+        ("MAME", "https://drive.google.com/drive/folders/1Qc9IIbB2CBIPIFKw2mHrPqFKVBSIu-zI?usp=share_link"),
+        ("TurboGrafx-16", "https://drive.google.com/drive/folders/1axNeenw-ZeGuD2kIck2HuDWwir1Cza_d?usp=share_link"),
+        ("PSP", "https://drive.google.com/drive/folders/1ayM2GHST6bTPRYFVxXRtM3oG1nbLtaoE?usp=share_link"),
+        ("Dreamcast", "https://drive.google.com/drive/folders/1hoBTZXbNaYUr5YNn6KN4WvnoDpCCs5ym?usp=share_link"),
+    ]
+
+    DAT_DOWNLOAD_LINKS = [
+        ("No-Intro DAT-o-MATIC", "https://datomatic.no-intro.org/index.php?page=download&s=64&op=dat"),
+        ("Redump DATs", "http://redump.org/downloads/"),
+    ]
+
     def __init__(self):
         if not GUI_AVAILABLE:
             raise RuntimeError("tkinter is not available")
 
         self.root = tk.Tk()
         self.root.title("ROM Collection Manager v2")
-        self.root.geometry("1300x850")
-        self.root.minsize(1000, 650)
+        self.root.geometry("1440x920")
+        self.root.minsize(1150, 720)
 
         # Data
         self.multi_matcher = MultiROMMatcher()
@@ -148,6 +178,18 @@ class ROMManagerGUI:
 
         dl_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
         dl_menu.add_command(label="Myrient", command=self._open_myrient_site)
+        dl_menu.add_separator()
+        for system_name, url in self.SYSTEM_DOWNLOAD_LINKS:
+            dl_menu.add_command(
+                label=system_name,
+                command=lambda n=system_name, u=url: self._open_download_link(n, u),
+            )
+        dl_menu.add_separator()
+        for label, url in self.DAT_DOWNLOAD_LINKS:
+            dl_menu.add_command(
+                label=label,
+                command=lambda n=label, u=url: self._open_download_link(n, u),
+            )
         dl_menu.add_separator()
         dl_menu.add_command(label="Settings", command=self._show_settings)
         dl_menu.add_command(label="About", command=self._show_about)
@@ -872,7 +914,7 @@ class ROMManagerGUI:
             return
         win = tk.Toplevel(self.root)
         win.title("Organization Preview")
-        self._center_window(win, 700, 500)
+        self._center_window(win, 900, 620)
         win.configure(bg=self.colors['bg'])
         ttk.Label(win, text=f"Strategy: {plan.strategy_description}").pack(anchor=tk.W, padx=10, pady=(10, 0))
         ttk.Label(win, text=f"Files: {plan.total_files:,} | Size: {format_size(plan.total_size)}").pack(anchor=tk.W, padx=10)
@@ -1025,7 +1067,7 @@ class ROMManagerGUI:
 
         win = tk.Toplevel(self.root)
         win.title("DAT Library")
-        self._center_window(win, 800, 600)
+        self._center_window(win, 980, 720)
         win.configure(bg=self.colors['bg'])
         win.transient(self.root)
         win.grab_set()
@@ -1100,6 +1142,11 @@ class ROMManagerGUI:
         """Open default Myrient website from Downloads menu."""
         url = "https://myrient.erista.me"
         self._emit_event('menu.downloads.myrient', f'Opened {url}')
+        webbrowser.open(url)
+
+    def _open_download_link(self, label, url):
+        """Open external download links from Downloads menu."""
+        self._emit_event('menu.downloads.link', f'Opened {label}: {url}')
         webbrowser.open(url)
 
     # ── Run ───────────────────────────────────────────────────────
