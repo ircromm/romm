@@ -164,13 +164,53 @@ class AppState:
 
 
 # ─── Snackbar ───────────────────────────────────────────────────────────────────
+def _legacy_open_overlay(pg: ft.Page, control: ft.Control):
+    """Fallback para versões antigas do Flet sem page.open()."""
+    control.open = True
+    if isinstance(control, ft.AlertDialog):
+        pg.dialog = control
+    elif isinstance(control, ft.SnackBar):
+        pg.snack_bar = control
+    pg.update()
+
+
+def _legacy_close_overlay(pg: ft.Page, control: ft.Control):
+    """Fallback para versões antigas do Flet sem page.close()."""
+    control.open = False
+    if isinstance(control, ft.AlertDialog) and getattr(pg, "dialog", None) is control:
+        pg.dialog = None
+    pg.update()
+
+
+def _safe_open_overlay(pg: ft.Page, control: ft.Control):
+    """Abre overlays com compatibilidade entre APIs nova/legada do Flet."""
+    open_fn = getattr(pg, "open", None)
+    if callable(open_fn):
+        open_fn(control)
+        return
+    _legacy_open_overlay(pg, control)
+
+
+def _safe_close_overlay(pg: ft.Page, control: ft.Control):
+    """Fecha overlays com compatibilidade entre APIs nova/legada do Flet."""
+    close_fn = getattr(pg, "close", None)
+    if callable(close_fn):
+        close_fn(control)
+        return
+    _legacy_close_overlay(pg, control)
+
+
 def _show_snack(pg: ft.Page, text: str, color: str = MOCHA["text"], duration: int = 3000):
     sb = ft.SnackBar(
         content=ft.Text(text, color=color),
         bgcolor=MOCHA["surface0"],
         duration=duration,
     )
-    pg.show_dialog(sb)
+    show_dialog_fn = getattr(pg, "show_dialog", None)
+    if callable(show_dialog_fn):
+        show_dialog_fn(sb)
+        return
+    _safe_open_overlay(pg, sb)
 
 
 def region_badge(region: str) -> ft.Container:
@@ -1471,7 +1511,7 @@ def main(page: ft.Page):
         def _reset(_):
             state.reset_session()
             switch_view(0)
-            page.close(dialog)
+            _safe_close_overlay(page, dialog)
             _show_snack(page, "Nova sessão iniciada.", MOCHA["green"])
 
         def _save_and_reset(_):
@@ -1493,12 +1533,12 @@ def main(page: ft.Page):
             title=ft.Text("Nova sessão"),
             content=ft.Text("Deseja salvar a sessão atual antes de reiniciar?"),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda e: page.close(dialog)),
+                ft.TextButton("Cancelar", on_click=lambda e: _safe_close_overlay(page, dialog)),
                 ft.TextButton("Não salvar", on_click=_reset),
                 ft.ElevatedButton("Salvar e reiniciar", on_click=_save_and_reset),
             ],
         )
-        page.open(dialog)
+        _safe_open_overlay(page, dialog)
 
     def navigate(index: int):
         nav_rail.selected_index = index
