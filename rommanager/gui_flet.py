@@ -7,6 +7,7 @@ Compatible with Flet 0.80+.
 import os
 import sys
 import threading
+import time
 import webbrowser
 from typing import List, Optional, Dict, Any
 
@@ -27,6 +28,7 @@ from .settings import (
 )
 from .health import run_health_checks
 from .dat_sources import DATSourceManager, KNOWN_SOURCES
+from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -127,6 +129,38 @@ class AppState:
         self.blindmatch_mode = False
         self.blindmatch_system = ""
         self.settings: Dict[str, Any] = load_settings()
+
+    def persist_session(self):
+        snapshot = build_snapshot(
+            dats=self.multi_matcher.get_dat_list(),
+            identified=self.identified,
+            unidentified=self.unidentified,
+            extras={
+                "blindmatch_mode": self.blindmatch_mode,
+                "blindmatch_system": self.blindmatch_system,
+            },
+        )
+        save_snapshot(snapshot)
+
+    def restore_session(self):
+        snap = load_snapshot()
+        if not snap:
+            return
+        restore_into_matcher(self.multi_matcher, snap)
+        self.identified, self.unidentified = restore_scanned(snap)
+        extras = snap.get("extras", {})
+        self.blindmatch_mode = bool(extras.get("blindmatch_mode", False))
+        self.blindmatch_system = extras.get("blindmatch_system", "")
+
+    def reset_session(self):
+        self.multi_matcher = MultiROMMatcher()
+        self.identified = []
+        self.unidentified = []
+        self.scan_progress = 0
+        self.scan_total = 0
+        self.blindmatch_mode = False
+        self.blindmatch_system = ""
+        self.persist_session()
 
 
 # ─── Snackbar ───────────────────────────────────────────────────────────────────
@@ -317,11 +351,12 @@ def empty_state(message: str, sub: str, button_label: str, on_button) -> ft.Cont
 
 # ─── Dashboard View ─────────────────────────────────────────────────────────────
 class DashboardView(ft.Column):
-    def __init__(self, state: AppState, pg: ft.Page, navigate_cb):
+    def __init__(self, state: AppState, pg: ft.Page, navigate_cb, new_session_cb):
         super().__init__(expand=True, spacing=20, scroll=ft.ScrollMode.AUTO)
         self.state = state
         self._pg = pg
         self.navigate_cb = navigate_cb
+        self.new_session_cb = new_session_cb
         self.padding = ft.Padding.all(30)
 
     def build_content(self):
@@ -334,6 +369,8 @@ class DashboardView(ft.Column):
         self.controls.append(ft.Row(controls=[
             ft.Icon(ft.Icons.DASHBOARD_OUTLINED, size=28, color=MOCHA["mauve"]),
             ft.Text(_tr("flet_nav_dashboard"), size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
+            ft.Container(expand=True),
+            ft.Button("Nova sessão", icon=ft.Icons.RESTART_ALT, bgcolor=MOCHA["red"], color=MOCHA["crust"], on_click=lambda e: self.new_session_cb()),
         ], spacing=12))
 
         stats = [
@@ -613,6 +650,7 @@ class ImportScanView(ft.Column):
         self._refresh_dat_list()
         self.build_content()
         self.update()
+        self.state.persist_session()
         if errors:
             _show_snack(self._pg, f"Errors: {'; '.join(errors)}", MOCHA["red"], 5000)
         else:
@@ -633,6 +671,7 @@ class ImportScanView(ft.Column):
             self._refresh_dat_list()
             self.build_content()
             self.update()
+            self.state.persist_session()
 
     async def _on_browse_folder_click(self, e):
         path = await self.folder_picker.get_directory_path(dialog_title=_tr("select_rom_folder"))
@@ -693,6 +732,7 @@ class ImportScanView(ft.Column):
             identified, unidentified = self.state.multi_matcher.match_all(scanned_all)
             self.state.identified = identified
             self.state.unidentified = unidentified
+            self.state.persist_session()
         except Exception as ex:
             _show_snack(self._pg, f"Scan error: {ex}", MOCHA["red"], 5000)
         finally:
@@ -887,6 +927,7 @@ class ToolsLogsView(ft.Column):
         )
         try:
             path = self.state.collection_manager.save(coll)
+            self.state.persist_session()
             self._log(f"Collection saved: {path}", MOCHA["green"])
             _show_snack(self._pg, f"Collection '{name}' saved!", MOCHA["green"])
         except Exception as ex:
@@ -908,6 +949,7 @@ class ToolsLogsView(ft.Column):
                     pass
             self.state.identified = [ScannedFile.from_dict(d) for d in coll.identified]
             self.state.unidentified = [ScannedFile.from_dict(d) for d in coll.unidentified]
+            self.state.persist_session()
             self._log(f"Collection loaded: {coll.name}", MOCHA["green"])
             _show_snack(self._pg, f"Collection '{coll.name}' loaded!", MOCHA["green"])
         except Exception as ex:
@@ -1394,6 +1436,7 @@ class SettingsView(ft.Column):
         try:
             save_settings(s)
             apply_runtime_settings(s)
+            self.state.persist_session()
             _show_snack(self._pg, "Settings saved!", MOCHA["green"])
         except Exception as ex:
             _show_snack(self._pg, f"Save error: {ex}", MOCHA["red"])
@@ -1404,6 +1447,7 @@ class SettingsView(ft.Column):
         apply_runtime_settings(self.state.settings)
         self.build_content()
         self.update()
+        self.state.persist_session()
         _show_snack(self._pg, "Settings reset to defaults.", MOCHA["green"])
 
 
@@ -1420,14 +1464,48 @@ def main(page: ft.Page):
     page.window.min_height = 600
 
     state = AppState()
+    state.restore_session()
     content_area = ft.Container(expand=True, bgcolor=MOCHA["base"])
+
+    def ask_new_session():
+        def _reset(_):
+            state.reset_session()
+            switch_view(0)
+            page.close(dialog)
+            _show_snack(page, "Nova sessão iniciada.", MOCHA["green"])
+
+        def _save_and_reset(_):
+            try:
+                name = f"autosave-{int(time.time())}"
+                collection = Collection(
+                    name=name,
+                    dat_infos=state.multi_matcher.get_dat_list(),
+                    identified=[s.to_dict() for s in state.identified],
+                    unidentified=[s.to_dict() for s in state.unidentified],
+                )
+                state.collection_manager.save(collection)
+            except Exception:
+                pass
+            _reset(None)
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Nova sessão"),
+            content=ft.Text("Deseja salvar a sessão atual antes de reiniciar?"),
+            actions=[
+                ft.TextButton("Cancelar", on_click=lambda e: page.close(dialog)),
+                ft.TextButton("Não salvar", on_click=_reset),
+                ft.ElevatedButton("Salvar e reiniciar", on_click=_save_and_reset),
+            ],
+        )
+        page.open(dialog)
 
     def navigate(index: int):
         nav_rail.selected_index = index
         nav_rail.update()
         switch_view(index)
 
-    dashboard_view = DashboardView(state, page, navigate)
+    dashboard_view = DashboardView(state, page, navigate, ask_new_session)
     library_view = LibraryView(state, page, navigate)
     import_scan_view = ImportScanView(state, page, on_scan_complete=lambda: switch_view(nav_rail.selected_index))
     tools_logs_view = ToolsLogsView(state, page)
@@ -1442,6 +1520,7 @@ def main(page: ft.Page):
         view.build_content()
         content_area.content = view
         content_area.update()
+        state.persist_session()
 
     nav_rail = ft.NavigationRail(
         selected_index=0,
@@ -1479,6 +1558,8 @@ def main(page: ft.Page):
         ft.VerticalDivider(width=1, color=MOCHA["surface1"]),
         content_area,
     ], expand=True, spacing=0))
+
+    page.on_disconnect = lambda e: state.persist_session()
 
     switch_view(0)
 
