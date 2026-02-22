@@ -10,6 +10,7 @@ from .gui import run_gui, GUI_AVAILABLE
 from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor
 from . import i18n as _i18n
 from .settings import load_settings, apply_runtime_settings
+from . import __version__
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -71,7 +72,7 @@ def open_web_mode(root):
     print(_tr("launcher_web_start"))
     # Open browser after a slight delay to ensure server is running
     threading.Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5000")).start()
-    run_server()
+    run_server(shutdown_on_idle=True)
 
 def open_desktop_mode(root):
     """Start desktop GUI"""
@@ -104,7 +105,7 @@ def run_launcher():
     setup_runtime_monitor()
     if not GUI_AVAILABLE:
         print(_tr("launcher_tk_unavailable"))
-        run_server()
+        run_server(shutdown_on_idle=True)
         return
 
     root = tk.Tk()
@@ -165,7 +166,7 @@ def run_launcher():
     ttk.Button(btn_frame, text=_tr("launcher_cli"),
               command=lambda: open_cli_mode(root)).pack(fill=tk.X, pady=5)
     
-    ttk.Label(frame, text="v1.0.0", font=('Segoe UI', 8), 
+    ttk.Label(frame, text=f"ver {__version__}", font=('Segoe UI', 8), 
              foreground='gray').pack(side=tk.BOTTOM)
     
     root.mainloop()

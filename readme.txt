@@ -1,4 +1,4 @@
-# R0MM v2
+# R0MM ver 0.30rc
 
 Web-Based ROM Organization System
 
@@ -18,7 +18,7 @@ You can also start desktop interfaces directly:
 
 ## 1. Overview
 
-R0MM v2 is a **web application** for scanning, identifying, analyzing, and organizing ROM collections using XML-based DAT files.
+R0MM ver 0.30rc is a **web application** for scanning, identifying, analyzing, and organizing ROM collections using XML-based DAT files.
 
 It supports:
 
@@ -286,7 +286,7 @@ Designed for users who:
 Displayed in footer:
 
 ```
-R0MM v2
+R0MM ver 0.30rc
 ```
 
 Indicates this is a second-generation web-based rewrite, likely replacing a previous CLI or desktop version.
@@ -295,7 +295,7 @@ Indicates this is a second-generation web-based rewrite, likely replacing a prev
 
 ## 11. Summary
 
-R0MM v2 is a local web application that:
+R0MM ver 0.30rc is a local web application that:
 
 * Parses DAT files
 * Scans ROM collections

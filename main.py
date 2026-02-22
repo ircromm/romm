@@ -45,7 +45,7 @@ def main():
 
         try:
             from rommanager.web import run_server
-            run_server(host, port)
+            run_server(host, port, shutdown_on_idle=True)
         except ImportError as e:
             print("Error: Flask is required for web interface")
             print("Install it with: pip install flask")

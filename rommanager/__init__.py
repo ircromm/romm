@@ -4,7 +4,7 @@ R0MM - A tool for organizing ROM collections using DAT files
 Supports No-Intro, Redump, TOSEC, and any XML-based DAT format.
 """
 
-__version__ = '2.1.0'
+__version__ = '0.30rc'
 __author__ = 'R0MM'
 
 from .models import (
@@ -44,4 +44,4 @@ __all__ = [
 def run_web(host='127.0.0.1', port=5000):
     """Run the web interface"""
     from .web import run_server
-    run_server(host, port)
+    run_server(host, port, shutdown_on_idle=True)
