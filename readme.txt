@@ -4,6 +4,18 @@ Web-Based ROM Organization System
 
 ---
 
+
+## Desktop launch modes
+
+You can also start desktop interfaces directly:
+
+- `python main.py --flet`
+- `python main.py --pyside6`
+- `python main.py --gui`
+- `python -m rommanager` (opens launcher selector with all desktop modes)
+
+---
+
 ## 1. Overview
 
 R0MM v2 is a **web application** for scanning, identifying, analyzing, and organizing ROM collections using XML-based DAT files.

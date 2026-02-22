@@ -6,6 +6,7 @@ A tool for organizing ROM collections using DAT files.
 Usage:
     Launcher: python main.py           (default)
     Flet GUI: python main.py --flet
+    PySide6:  python main.py --pyside6
     Tkinter:  python main.py --gui
     Web Mode: python main.py --web
     CLI Mode: python main.py --dat <file> --roms <folder> --output <folder>
@@ -60,6 +61,19 @@ def main():
             sys.exit(run_gui())
         else:
             print("tkinter not available. Use --flet or --web instead.")
+            sys.exit(1)
+        return
+
+    # Check for --pyside6 flag
+    if '--pyside6' in sys.argv:
+        monitor_action('mode selected: pyside6', logger=logger)
+        try:
+            from rommanager.gui_pyside6 import run_pyside6_gui
+            sys.exit(run_pyside6_gui())
+        except ImportError as e:
+            print("Error: PySide6 is required for the desktop interface")
+            print("Install it with: pip install PySide6")
+            print(f"\nDetails: {e}")
             sys.exit(1)
         return
 
