@@ -1088,8 +1088,500 @@ class ROMManagerGUI:
             ttk.Button(r, text="Open Page",
                        command=lambda sid=s['id']: src.open_source_page(sid)).pack(side=tk.LEFT, padx=(5, 0))
 
-    # ── Direct download features removed ───────────────────────────
+    # ── Myrient Download ───────────────────────────────────────────
 
+    def _check_myrient(self):
+        if not MYRIENT_AVAILABLE:
+            messagebox.showerror("Error", "Myrient downloader not available.\n"
+                                 "Install 'requests': pip install requests")
+            return False
+        return True
+
+    def _download_selected_missing(self):
+        """Download only the selected missing ROMs from the tree."""
+        if not self._check_myrient():
+            return
+        sel = self.ms_tree.selection()
+        if not sel:
+            messagebox.showwarning("Warning", "Select missing ROMs to download")
+            return
+
+        # Collect selected ROM names
+        selected_names = set()
+        for item in sel:
+            vals = self.ms_tree.item(item, 'values')
+            if vals:
+                selected_names.add(vals[0])  # rom_name is first column
+
+        # Find matching ROMInfo objects
+        all_missing = self.multi_matcher.get_missing(self.identified)
+        to_download = [r for r in all_missing if r.name in selected_names]
+
+        if not to_download:
+            messagebox.showwarning("Warning", "Could not match selected ROMs")
+            return
+
+        total_size = sum(r.size for r in to_download)
+        msg = f"Download {len(to_download)} selected ROM(s)?\n\nTotal size: {format_size(total_size)}"
+        self._start_download_flow(to_download, msg)
+
+    def _download_missing_dialog(self):
+        """Download all missing ROMs."""
+        if not self._check_myrient():
+            return
+        if not self.multi_matcher.matchers:
+            messagebox.showwarning("Warning", "Load DATs and scan first")
+            return
+        all_missing = self.multi_matcher.get_missing(self.identified)
+        if not all_missing:
+            messagebox.showinfo("Info", "No missing ROMs!")
+            return
+        total_size = sum(r.size for r in all_missing)
+        msg = f"Download {len(all_missing):,} missing ROM(s)?\n\nTotal size: {format_size(total_size)}"
+        self._start_download_flow(all_missing, msg)
+
+    def _start_download_flow(self, roms_to_download, confirm_msg):
+        """
+        Show a guided download dialog:
+        1. Confirm count
+        2. Choose destination (default = scan folder)
+        3. Resolve URLs (with progress)
+        4. Download sequentially (with progress, pause/cancel)
+        """
+        # Step 1: Determine destination
+        scan_folder = self.scan_path_var.get()
+        default_dest = scan_folder if scan_folder != "No folder selected" and os.path.isdir(scan_folder) else ""
+
+        win = tk.Toplevel(self.root)
+        win.title("Download Missing ROMs")
+        self._center_window(win, 650, 550)
+        win.configure(bg=self.colors['bg'])
+        win.transient(self.root)
+        win.grab_set()
+
+        # Header
+        ttk.Label(win, text="Download Missing ROMs from Myrient",
+                  font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, padx=15, pady=(15, 5))
+
+        # Info
+        info_var = tk.StringVar(value=f"{len(roms_to_download):,} ROMs to download")
+        ttk.Label(win, textvariable=info_var, style='Stats.TLabel').pack(anchor=tk.W, padx=15, pady=(0, 10))
+
+        # Destination
+        dest_frame = ttk.LabelFrame(win, text="Download Destination", padding=8)
+        dest_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
+        dest_var = tk.StringVar(value=default_dest)
+        ttk.Label(dest_frame, text="ROMs will be saved to your scan folder so they're\n"
+                  "automatically detected on next scan.",
+                  foreground=self.colors['fg']).pack(anchor=tk.W)
+        dest_row = ttk.Frame(dest_frame)
+        dest_row.pack(fill=tk.X, pady=(5, 0))
+        ttk.Entry(dest_row, textvariable=dest_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(dest_row, text="Browse...",
+                   command=lambda: dest_var.set(filedialog.askdirectory(title="Download Destination") or dest_var.get())
+                   ).pack(side=tk.LEFT, padx=(5, 0))
+
+        # Delay between downloads
+        delay_frame = ttk.LabelFrame(win, text="Download Settings", padding=8)
+        delay_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
+        delay_row = ttk.Frame(delay_frame)
+        delay_row.pack(fill=tk.X)
+        ttk.Label(delay_row, text="Delay between downloads (seconds):").pack(side=tk.LEFT)
+        delay_var = tk.IntVar(value=5)
+        delay_spin = ttk.Spinbox(delay_row, from_=0, to=60, textvariable=delay_var, width=5)
+        delay_spin.pack(side=tk.LEFT, padx=(8, 0))
+
+        # Progress area
+        prog_frame = ttk.LabelFrame(win, text="Progress", padding=8)
+        prog_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
+
+        status_var = tk.StringVar(value="Ready to start")
+        ttk.Label(prog_frame, textvariable=status_var).pack(anchor=tk.W)
+
+        # Overall progress
+        ttk.Label(prog_frame, text="Overall:").pack(anchor=tk.W, pady=(5, 0))
+        overall_bar = ttk.Progressbar(prog_frame, mode='determinate')
+        overall_bar.pack(fill=tk.X)
+        overall_label = tk.StringVar(value="0 / 0")
+        ttk.Label(prog_frame, textvariable=overall_label).pack(anchor=tk.W)
+
+        # Current file progress
+        ttk.Label(prog_frame, text="Current file:").pack(anchor=tk.W, pady=(5, 0))
+        file_bar = ttk.Progressbar(prog_frame, mode='determinate')
+        file_bar.pack(fill=tk.X)
+        file_label = tk.StringVar(value="")
+        ttk.Label(prog_frame, textvariable=file_label).pack(anchor=tk.W)
+
+        # Log area
+        log = tk.Text(prog_frame, height=6, bg=self.colors['surface'],
+                      fg=self.colors['fg'], font=('Consolas', 8), wrap=tk.WORD)
+        log.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        # Buttons
+        btn_frame = ttk.Frame(win)
+        btn_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
+
+        downloader = [None]  # mutable ref
+        downloading = [False]
+
+        def log_msg(msg):
+            log.insert(tk.END, msg + '\n')
+            log.see(tk.END)
+
+        def on_progress(prog: DownloadProgress):
+            """Called from download thread — schedule GUI updates."""
+            task = prog.current_task
+            def update():
+                # Overall (Corrected Math: based on COMPLETED items, not current index)
+                done_count = prog.completed + prog.failed
+                pct = (done_count / prog.total_count * 100) if prog.total_count else 0
+                overall_bar['value'] = pct
+                overall_label.set(f"{done_count} / {prog.total_count} "
+                                  f"({prog.completed} OK, {prog.failed} failed)")
+
+                # Current file
+                if task:
+                    if task.total_bytes > 0:
+                        fpct = (task.downloaded_bytes / task.total_bytes * 100)
+                        file_bar['value'] = fpct
+                        
+                        # Detailed format: "Filename (5.2MB/10MB - 52%)"
+                        mb_done = task.downloaded_bytes / (1024 * 1024)
+                        mb_total = task.total_bytes / (1024 * 1024)
+                        file_label.set(f"{task.rom_name} ({mb_done:.1f}/{mb_total:.1f} MB - {fpct:.1f}%)")
+                    else:
+                        file_bar.stop()
+                        file_label.set(f"{task.rom_name} — {format_size(task.downloaded_bytes)}")
+
+                    if task.status == DownloadStatus.COMPLETE:
+                        status_var.set(f"Downloaded: {task.rom_name}")
+                    elif task.status == DownloadStatus.FAILED:
+                        status_var.set(f"Failed: {task.rom_name}")
+                        log_msg(f"FAIL: {task.rom_name} — {task.error}")
+                    elif task.status == DownloadStatus.CRC_MISMATCH:
+                        status_var.set(f"CRC mismatch: {task.rom_name}")
+                        log_msg(f"CRC MISMATCH: {task.rom_name} — {task.error}")
+                    elif task.status == DownloadStatus.CANCELLED:
+                        status_var.set("Cancelled")
+
+            win.after(0, update)
+
+        def start_download():
+            dest = dest_var.get().strip()
+            if not dest or not os.path.isdir(dest):
+                messagebox.showwarning("Warning", "Select a valid destination folder", parent=win)
+                return
+
+            start_btn.config(state=tk.DISABLED)
+            pause_btn.config(state=tk.NORMAL)
+            cancel_btn.config(state=tk.NORMAL)
+            downloading[0] = True
+
+            def worker():
+                try:
+                    dl = MyrientDownloader()
+                    downloader[0] = dl
+
+                    # Phase 1: Resolve URLs
+                    win.after(0, lambda: status_var.set("Resolving download URLs..."))
+                    win.after(0, lambda: log_msg("Looking up ROM files on Myrient..."))
+
+                    def resolve_progress(name, cur, tot):
+                        win.after(0, lambda: status_var.set(f"Resolving: {cur}/{tot} — {name}"))
+                        win.after(0, lambda: overall_bar.__setitem__('value', cur / tot * 50))
+
+                    queued = dl.queue_missing_roms(roms_to_download, dest, resolve_progress)
+
+                    win.after(0, lambda: log_msg(f"Found {queued} of {len(roms_to_download)} ROMs on Myrient"))
+
+                    if queued == 0:
+                        win.after(0, lambda: status_var.set("No ROMs found on Myrient"))
+                        win.after(0, lambda: log_msg("None of the missing ROMs were found. They may not be available."))
+                        win.after(0, lambda: start_btn.config(state=tk.NORMAL))
+                        downloading[0] = False
+                        return
+
+                    # Phase 2: Download
+                    win.after(0, lambda: status_var.set(f"Downloading {queued} ROMs..."))
+                    win.after(0, lambda: overall_bar.__setitem__('value', 0))
+
+                    result = dl.start_downloads(on_progress, download_delay=delay_var.get())
+
+                    win.after(0, lambda: status_var.set(
+                        f"Done! {result.completed} downloaded, {result.failed} failed, {result.cancelled} cancelled"))
+                    win.after(0, lambda: overall_bar.__setitem__('value', 100))
+                    win.after(0, lambda: log_msg(
+                        f"COMPLETE: {result.completed} OK, {result.failed} failed, {result.cancelled} cancelled"))
+
+                except Exception as e:
+                    # Capturing 'e' as a local string to pass to thread-safe callback
+                    error_msg = str(e)
+                    win.after(0, lambda: status_var.set(f"Error: {error_msg}"))
+                    win.after(0, lambda: log_msg(f"ERROR: {error_msg}"))
+                finally:
+                    downloading[0] = False
+                    win.after(0, lambda: start_btn.config(state=tk.NORMAL))
+                    win.after(0, lambda: pause_btn.config(state=tk.DISABLED))
+                    win.after(0, lambda: cancel_btn.config(state=tk.DISABLED))
+
+            start_monitored_thread(worker, name="tk-download-worker")
+
+        def pause_download():
+            if downloader[0]:
+                if pause_btn.cget('text') == 'Pause':
+                    downloader[0].pause()
+                    pause_btn.config(text='Resume')
+                    status_var.set("Paused")
+                else:
+                    downloader[0].resume()
+                    pause_btn.config(text='Pause')
+                    status_var.set("Resuming...")
+
+        def cancel_download():
+            if downloader[0]:
+                downloader[0].cancel()
+                status_var.set("Cancelling...")
+
+        def on_close():
+            if downloading[0] and downloader[0]:
+                downloader[0].cancel()
+            win.destroy()
+
+        start_btn = ttk.Button(btn_frame, text="Start Download", command=start_download)
+        start_btn.pack(side=tk.LEFT)
+        pause_btn = ttk.Button(btn_frame, text="Pause", command=pause_download, state=tk.DISABLED)
+        pause_btn.pack(side=tk.LEFT, padx=(5, 0))
+        cancel_btn = ttk.Button(btn_frame, text="Cancel", command=cancel_download, state=tk.DISABLED)
+        cancel_btn.pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(btn_frame, text="Close", command=on_close).pack(side=tk.RIGHT)
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+
+    # ── Myrient Browser ────────────────────────────────────────────
+
+    def _show_myrient_browser(self):
+        """Browse and download ROMs from the Myrient catalog."""
+        if not self._check_myrient():
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("Myrient ROM Browser")
+        self._center_window(win, 1000, 700)
+        win.configure(bg=self.colors['bg'])
+        win.transient(self.root)
+        win.grab_set()
+
+        # Header
+        ttk.Label(win, text="Myrient ROM Browser",
+                  font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
+        ttk.Label(win, text="Browse and download ROMs from myrient.erista.me",
+                  foreground=self.colors['fg']).pack(anchor=tk.W, padx=10, pady=(0, 10))
+
+        # Main layout: system list on left, files on right
+        panes = ttk.PanedWindow(win, orient=tk.HORIZONTAL)
+        panes.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 5))
+
+        # Left: system list (Corrected with scrollbar in frame)
+        left = ttk.Frame(panes)
+        panes.add(left, weight=1)
+
+        ttk.Label(left, text="Systems:", font=('Segoe UI', 10, 'bold')).pack(anchor=tk.W)
+        sys_search_var = tk.StringVar()
+        ttk.Entry(left, textvariable=sys_search_var, width=30).pack(fill=tk.X, pady=(3, 3))
+
+        sys_frame = ttk.Frame(left)
+        sys_frame.pack(fill=tk.BOTH, expand=True)
+        
+        sys_vsb = ttk.Scrollbar(sys_frame, orient=tk.VERTICAL)
+        sys_list = tk.Listbox(sys_frame, bg=self.colors['surface'], fg=self.colors['fg'],
+                              selectbackground=self.colors['accent'], font=('Segoe UI', 9),
+                              yscrollcommand=sys_vsb.set)
+        sys_vsb.config(command=sys_list.yview)
+        
+        sys_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        sys_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Right: file list (Corrected with scrollbar)
+        right = ttk.Frame(panes)
+        panes.add(right, weight=2)
+
+        file_toolbar = ttk.Frame(right)
+        file_toolbar.pack(fill=tk.X)
+        ttk.Label(file_toolbar, text="Files:", font=('Segoe UI', 10, 'bold')).pack(side=tk.LEFT)
+        file_search_var = tk.StringVar()
+        ttk.Entry(file_toolbar, textvariable=file_search_var, width=30).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(file_toolbar, text="Search", command=lambda: load_files(filter_text=file_search_var.get())
+                   ).pack(side=tk.LEFT, padx=(5, 0))
+        file_count_var = tk.StringVar(value="")
+        ttk.Label(file_toolbar, textvariable=file_count_var).pack(side=tk.RIGHT)
+
+        # File Tree + Scrollbar container
+        tree_frame = ttk.Frame(right)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        file_vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
+        file_tree = ttk.Treeview(tree_frame, columns=['name', 'size'], show='headings', yscrollcommand=file_vsb.set)
+        file_vsb.config(command=file_tree.yview)
+        
+        file_tree.heading('name', text='ROM Name')
+        file_tree.heading('size', text='Size')
+        file_tree.column('name', width=400)
+        file_tree.column('size', width=100)
+        
+        file_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        file_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Bottom: download controls
+        bottom = ttk.Frame(win)
+        bottom.pack(fill=tk.X, padx=10, pady=(5, 10))
+        
+        dl_dest_var = tk.StringVar(value=self.scan_path_var.get() if self.scan_path_var.get() != "No folder selected" else "")
+        ttk.Label(bottom, text="Save to:").pack(side=tk.LEFT)
+        ttk.Entry(bottom, textvariable=dl_dest_var, width=40).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(bottom, text="Browse...",
+                   command=lambda: dl_dest_var.set(filedialog.askdirectory() or dl_dest_var.get())
+                   ).pack(side=tk.LEFT, padx=(5, 0))
+        
+        ttk.Button(bottom, text="Download Selected", command=lambda: download_selected()).pack(side=tk.RIGHT)
+
+        # In-Browser Progress Bar
+        status_frame = ttk.Frame(win)
+        status_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        dl_progress = ttk.Progressbar(status_frame, mode='determinate')
+        dl_progress.pack(fill=tk.X, pady=(0, 2))
+        
+        dl_status_var = tk.StringVar(value="")
+        ttk.Label(status_frame, textvariable=dl_status_var, font=('Segoe UI', 9)).pack(anchor=tk.W)
+
+        # Data
+        systems = MyrientDownloader.get_systems()
+        all_systems = [(s['name'], s['category']) for s in systems]
+        current_files = []
+        current_system_url = [None]
+
+        def fill_systems(q=''):
+            sys_list.delete(0, tk.END)
+            q = q.lower()
+            for name, cat in all_systems:
+                if q and q not in name.lower():
+                    continue
+                sys_list.insert(tk.END, f"[{cat}] {name}")
+
+        fill_systems()
+
+        def on_sys_search(*_):
+            fill_systems(sys_search_var.get())
+
+        sys_search_var.trace_add('write', on_sys_search)
+
+        def on_sys_select(event):
+            sel = sys_list.curselection()
+            if not sel:
+                return
+            text = sys_list.get(sel[0])
+            # Extract system name from "[Category] Name"
+            name = text.split('] ', 1)[1] if '] ' in text else text
+            load_files(name)
+
+        sys_list.bind('<<ListboxSelect>>', on_sys_select)
+
+        def load_files(system_name=None, filter_text=''):
+            file_tree.delete(*file_tree.get_children())
+            file_count_var.set("Loading...")
+            win.update_idletasks()
+
+            def worker():
+                try:
+                    dl = MyrientDownloader()
+                    if system_name:
+                        url = dl.find_system_url(system_name)
+                        current_system_url[0] = url
+                        files = dl.list_files(url=url) if url else []
+                    else:
+                        files = dl.list_files(url=current_system_url[0]) if current_system_url[0] else []
+
+                    if filter_text:
+                        q = filter_text.lower()
+                        files = [f for f in files if q in f.name.lower()]
+
+                    nonlocal current_files
+                    current_files = files
+
+                    def update_ui():
+                        file_tree.delete(*file_tree.get_children())
+                        for f in files:
+                            file_tree.insert('', 'end', values=(f.name, f.size_text or '?'))
+                        file_count_var.set(f"{len(files):,} files")
+
+                    win.after(0, update_ui)
+                except Exception as e:
+                    error_msg = str(e)
+                    win.after(0, lambda: file_count_var.set(f"Error: {error_msg}"))
+
+            start_monitored_thread(worker, name="tk-list-files-worker")
+
+    
+        def download_selected():
+            sel = file_tree.selection()
+            if not sel:
+                messagebox.showwarning("Warning", "Select files to download", parent=win)
+                return
+            dest = dl_dest_var.get().strip()
+            if not dest:
+                messagebox.showwarning("Warning", "Select download destination", parent=win)
+                return
+
+            # Match selection to file objects
+            to_dl = []
+            for item in sel:
+                vals = file_tree.item(item, 'values')
+                if vals:
+                    name = vals[0]
+                    for f in current_files:
+                        if f.name == name:
+                            to_dl.append(f)
+                            break
+
+            if not to_dl:
+                return
+
+            dl_status_var.set(f"Downloading {len(to_dl)} file(s)...")
+            dl_progress['value'] = 0
+
+            def worker():
+                try:
+                    dl = MyrientDownloader()
+                    for i, f in enumerate(to_dl):
+                        dl.queue_rom(rom_name=f.name, url=f.url, dest_folder=dest)
+                        
+                    def on_prog(prog):
+                        t = prog.current_task
+                        if t:
+                            # Update Bar
+                            pct = (prog.current_index / prog.total_count * 100) if prog.total_count else 0
+                            win.after(0, lambda: dl_progress.__setitem__('value', pct))
+                            
+                            # Update Label with DETAILED progress
+                            if t.total_bytes > 0:
+                                fpct = (t.downloaded_bytes / t.total_bytes * 100)
+                                mb_done = t.downloaded_bytes / (1024 * 1024)
+                                mb_total = t.total_bytes / (1024 * 1024)
+                                msg = f"Downloading: {t.rom_name} ({mb_done:.1f}/{mb_total:.1f} MB - {fpct:.1f}%)"
+                            else:
+                                msg = f"Downloading: {t.rom_name}..."
+                                
+                            win.after(0, lambda: dl_status_var.set(msg))
+
+                    result = dl.start_downloads(on_prog, download_delay=0)
+                    win.after(0, lambda: dl_status_var.set(
+                        f"Done! {result.completed} OK, {result.failed} failed"))
+                    win.after(0, lambda: dl_progress.__setitem__('value', 100))
+                except Exception as e:
+                    error_msg = str(e)
+                    win.after(0, lambda: dl_status_var.set(f"Error: {error_msg}"))
+
+            start_monitored_thread(worker, name="tk-quick-download-worker")
 
     # ── Run ───────────────────────────────────────────────────────
 

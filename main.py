@@ -63,7 +63,6 @@ def main():
 
     # Check for --flet flag
     if '--flet' in sys.argv:
-        monitor_action('mode selected: flet', logger=logger)
         try:
             from rommanager.gui_flet import run_flet_gui
             sys.exit(run_flet_gui())
@@ -75,7 +74,6 @@ def main():
         return
 
     if len(sys.argv) == 1:
-        monitor_action('mode selected: launcher', logger=logger)
         try:
             from rommanager.launcher import run_launcher
             run_launcher()

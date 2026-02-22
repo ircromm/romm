@@ -23,6 +23,19 @@ def open_flet_mode(root):
         print(f"Details: {exc}")
         sys.exit(1)
 
+
+def open_flet_mode(root):
+    """Start the Flet desktop app."""
+    root.destroy()
+    try:
+        from .gui_flet import run_flet_gui
+        run_flet_gui()
+    except ImportError as exc:
+        print("Error: Flet interface is not available.")
+        print("Install it with: pip install flet")
+        print(f"Details: {exc}")
+        sys.exit(1)
+
 def open_web_mode(root):
     """Start web server and open browser"""
     monitor_action("launcher click: webapp")
@@ -45,7 +58,6 @@ def open_desktop_mode(root):
 
 def open_cli_mode(root):
     """Show CLI usage/help in the current terminal."""
-    monitor_action("launcher click: cli")
     root.destroy()
     print("Starting CLI mode...")
     from .cli import run_cli
@@ -62,7 +74,6 @@ def run_launcher():
     root = tk.Tk()
     install_tk_exception_bridge(root)
     root.title("ROM Manager")
-    monitor_action("launcher opened")
     root.geometry("460x340")
     root.resizable(False, False)
     
