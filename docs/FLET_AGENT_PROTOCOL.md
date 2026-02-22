@@ -32,6 +32,7 @@ Sempre seguir esta ordem:
 3. **Validar coerência de padrão** (não misturar metade do fluxo no modo novo e metade no legado sem wrapper).
 4. **Garantir fallback** para abertura/fechamento de overlays.
 5. **Atualizar documentação** quando introduzir novo padrão de UI.
+6. **Registrar versão do Flet em runtime** e alertar quando estiver abaixo do mínimo suportado.
 
 ---
 
@@ -59,6 +60,8 @@ Esse padrão elimina quebra quando o ambiente está com Flet mais antigo do que 
 ---
 
 ## 5) Diagnóstico rápido para erro de tela preta + snackbar vermelho
+
+Além da investigação manual, o startup da GUI deve registrar a versão real do Flet em runtime e emitir aviso visual/log quando a versão estiver abaixo do mínimo.
 
 Quando aparecer algo como:
 

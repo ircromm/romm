@@ -68,6 +68,8 @@ DATS_DIR = os.path.join(APP_DATA_DIR, 'dats')
 IMPORTS_DIR = os.path.join(APP_DATA_DIR, 'imports')
 IMPORTED_DATS_DIR = os.path.join(IMPORTS_DIR, 'dats')
 IMPORTED_COLLECTIONS_DIR = os.path.join(IMPORTS_DIR, 'collections')
+IMPORTED_ROMS_DIR = os.path.join(IMPORTS_DIR, 'roms')
+IMPORTED_DOWNLOADS_DIR = os.path.join(IMPORTS_DIR, 'downloads')
 SESSION_CACHE_DIR = os.path.join(APP_DATA_DIR, 'cache')
 EXPORTS_DIR = os.path.join(APP_DATA_DIR, 'exports')
 DAT_INDEX_FILE = os.path.join(APP_DATA_DIR, 'dat_index.json')
@@ -83,6 +85,8 @@ def ensure_app_directories() -> None:
         IMPORTS_DIR,
         IMPORTED_DATS_DIR,
         IMPORTED_COLLECTIONS_DIR,
+        IMPORTED_ROMS_DIR,
+        IMPORTED_DOWNLOADS_DIR,
         SESSION_CACHE_DIR,
         EXPORTS_DIR,
     ):

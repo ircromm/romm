@@ -35,9 +35,12 @@ from .shared_config import (
     APP_DATA_DIR,
     IMPORTED_DATS_DIR,
     IMPORTED_COLLECTIONS_DIR,
+    IMPORTED_ROMS_DIR,
+    IMPORTED_DOWNLOADS_DIR,
     ensure_app_directories,
 )
 from .blindmatch import build_blindmatch_rom
+from .monitor import setup_runtime_monitor, monitor_action
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
 
@@ -90,7 +93,16 @@ def _copy_collection_to_local_cache(source_path: str) -> str:
     return _copy_into_app_storage(source_path, IMPORTED_COLLECTIONS_DIR)
 
 
+def _copy_rom_to_local_cache(source_path: str) -> str:
+    return _copy_into_app_storage(source_path, IMPORTED_ROMS_DIR)
+
+
+def _copy_download_to_local_cache(source_path: str) -> str:
+    return _copy_into_app_storage(source_path, IMPORTED_DOWNLOADS_DIR)
+
+
 SESSION_EXPORTS_DIR = os.path.join(APP_DATA_DIR, "sessions")
+MIN_FLET_VERSION = "0.80.0"
 
 
 def _clear_app_cache() -> None:
@@ -110,6 +122,18 @@ def _clear_app_cache() -> None:
                     os.remove(path)
             except Exception:
                 pass
+
+
+def _version_tuple(version_str: str) -> tuple:
+    clean = (version_str or "").split("+")[0].split("-")[0]
+    parts = []
+    for item in clean.split("."):
+        if item.isdigit():
+            parts.append(int(item))
+        else:
+            digits = "".join(c for c in item if c.isdigit())
+            parts.append(int(digits) if digits else 0)
+    return tuple(parts)
 
 
 # ─── Catppuccin Mocha Palette ──────────────────────────────────────────────────
@@ -173,6 +197,9 @@ class AppState:
 
     def __init__(self):
         _ensure_app_structure()
+        self.logger = setup_runtime_monitor()
+        self.activity_log: List[tuple[str, str]] = []
+        self.activity_subscribers: List[Any] = []
         self.multi_matcher = MultiROMMatcher()
         self.organizer = Organizer()
         self.collection_manager = CollectionManager()
@@ -218,6 +245,22 @@ class AppState:
         self.blindmatch_mode = False
         self.blindmatch_system = ""
         self.persist_session()
+
+    def subscribe_activity_log(self, callback) -> None:
+        if callback not in self.activity_subscribers:
+            self.activity_subscribers.append(callback)
+
+    def emit_activity(self, action: str, message: str, color: str = MOCHA["text"]) -> None:
+        monitor_action(action, logger=self.logger)
+        entry = (message, color)
+        self.activity_log.append(entry)
+        if len(self.activity_log) > 1000:
+            self.activity_log = self.activity_log[-1000:]
+        for callback in list(self.activity_subscribers):
+            try:
+                callback(message, color)
+            except Exception:
+                pass
 
 
 # ─── Snackbar ───────────────────────────────────────────────────────────────────
@@ -738,6 +781,7 @@ class ImportScanView(ft.Column):
             allow_multiple=True,
         )
         if not files:
+            self.state.emit_activity("ui:import:dat:cancel", "DAT import canceled.", MOCHA["overlay0"])
             return
         errors = []
         for f in files:
@@ -752,9 +796,13 @@ class ImportScanView(ft.Column):
         self.update()
         self.state.persist_session()
         if errors:
-            _show_snack(self._pg, f"Errors: {'; '.join(errors)}", MOCHA["red"], 5000)
+            msg = f"Errors: {'; '.join(errors)}"
+            self.state.emit_activity("ui:import:dat:error", msg, MOCHA["red"])
+            _show_snack(self._pg, msg, MOCHA["red"], 5000)
         else:
-            _show_snack(self._pg, f"Loaded {len(files)} DAT file(s)", MOCHA["green"])
+            msg = f"Loaded {len(files)} DAT file(s)"
+            self.state.emit_activity("ui:import:dat:loaded", msg, MOCHA["green"])
+            _show_snack(self._pg, msg, MOCHA["green"])
 
     def _remove_selected_dat(self, e):
         to_remove = []
@@ -778,6 +826,7 @@ class ImportScanView(ft.Column):
         if path:
             self._selected_folder = path
             self.folder_path_text.value = path
+            self.state.emit_activity("ui:scan:folder:selected", f"Scan folder selected: {path}", MOCHA["blue"])
             self._update_scan_btn_state()
             self.folder_path_text.update()
             self.scan_btn.update()
@@ -796,6 +845,7 @@ class ImportScanView(ft.Column):
         if not folder or not os.path.isdir(folder):
             return
         self.state.scanning = True
+        self.state.emit_activity("ui:scan:start", f"Starting scan: {folder}", MOCHA["blue"])
         self.state.blindmatch_mode = bool(self.blindmatch_switch.value)
         self.state.blindmatch_system = (self.blindmatch_system_field.value or "").strip()
         self.scan_btn.disabled = True
@@ -824,10 +874,11 @@ class ImportScanView(ft.Column):
             scanned_all: List[ScannedFile] = []
             for i, fpath in enumerate(files):
                 try:
-                    if fpath.lower().endswith('.zip') and scan_archives:
-                        results = FileScanner.scan_archive_contents(fpath)
+                    local_source = _copy_rom_to_local_cache(fpath)
+                    if local_source.lower().endswith('.zip') and scan_archives:
+                        results = FileScanner.scan_archive_contents(local_source)
                     else:
-                        results = [FileScanner.scan_file(fpath)]
+                        results = [FileScanner.scan_file(local_source)]
                     scanned_all.extend(results)
                 except Exception:
                     pass
@@ -844,7 +895,9 @@ class ImportScanView(ft.Column):
             self.state.identified = identified
             self.state.unidentified = unidentified
             self.state.persist_session()
+            self.state.emit_activity("ui:scan:complete", f"Scan complete: {len(identified)} identified, {len(unidentified)} unidentified", MOCHA["green"])
         except Exception as ex:
+            self.state.emit_activity("ui:scan:error", f"Scan error: {ex}", MOCHA["red"])
             _show_snack(self._pg, f"Scan error: {ex}", MOCHA["red"], 5000)
         finally:
             self.state.scanning = False
@@ -912,10 +965,14 @@ class ToolsLogsView(ft.Column):
         self.output_path_text = ft.Text(_tr("flet_no_output"), size=13, color=MOCHA["subtext0"], expand=True)
         self._output_folder = ""
         self.log_view = ft.ListView(spacing=2, height=200, padding=ft.Padding.all(8), auto_scroll=True)
+        self.state.subscribe_activity_log(self._append_log_entry)
 
     def build_content(self):
         self.controls.clear()
         self.padding = ft.Padding.all(30)
+        if not self.log_view.controls:
+            for msg, color in self.state.activity_log[-300:]:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=color, selectable=True, font_family="Consolas,monospace"))
         self.controls.extend([
             ft.Row(controls=[
                 ft.Icon(ft.Icons.BUILD_OUTLINED, size=28, color=MOCHA["mauve"]),
@@ -964,12 +1021,15 @@ class ToolsLogsView(ft.Column):
             _card_container(self.log_view, bgcolor=MOCHA["crust"], padding=ft.Padding.all(4)),
         ])
 
-    def _log(self, msg: str, color: str = MOCHA["text"]):
+    def _append_log_entry(self, msg: str, color: str = MOCHA["text"]):
         self.log_view.controls.append(ft.Text(msg, size=11, color=color, selectable=True, font_family="Consolas,monospace"))
         try:
             self.log_view.update()
         except Exception:
             pass
+
+    def _log(self, msg: str, color: str = MOCHA["text"], action: str = "ui:tools:log"):
+        self.state.emit_activity(action, msg, color)
 
     async def _on_browse_output_click(self, e):
         path = await self.output_picker.get_directory_path(dialog_title=_tr("select_output_folder"))
@@ -1294,6 +1354,7 @@ class MyrientView(ft.Column):
 
     def _on_system_select(self, e):
         self._selected_system = e.control.value
+        self.state.emit_activity("ui:myrient:system_select", f"Myrient system selected: {self._selected_system}", MOCHA["blue"])
         self.file_list.controls.clear()
         self.status_text.value = f"Loading files for {self._selected_system}..."
         try:
@@ -1306,9 +1367,11 @@ class MyrientView(ft.Column):
 
     def _on_search(self, e):
         if not self._selected_system:
+            self.state.emit_activity("ui:myrient:search:block", "Myrient search blocked: no system selected.", MOCHA["peach"])
             _show_snack(self._pg, "Select a system first.", MOCHA["peach"])
             return
         query = self.search_field.value or ""
+        self.state.emit_activity("ui:myrient:search", f"Myrient search: '{query}' in {self._selected_system}", MOCHA["blue"])
         self.file_list.controls.clear()
         self.status_text.value = f"Searching '{query}' in {self._selected_system}..."
         try:
@@ -1362,14 +1425,17 @@ class MyrientView(ft.Column):
         path = await self.download_picker.get_directory_path(dialog_title="Select Download Folder")
         if path:
             self._download_folder = path
+            self.state.emit_activity("ui:myrient:download_folder", f"Download folder selected: {path}", MOCHA["blue"])
             self.build_content()
             self.update()
 
     def _download_file(self, url: str, name: str):
         if not self._download_folder:
+            self.state.emit_activity("ui:myrient:download:block", "Download blocked: no folder selected.", MOCHA["peach"])
             _show_snack(self._pg, "Select a download folder first.", MOCHA["peach"])
             return
         self.status_text.value = f"Downloading {name}..."
+        self.state.emit_activity("ui:myrient:download:start", f"Downloading {name}", MOCHA["blue"])
         try:
             self.status_text.update()
         except Exception:
@@ -1383,9 +1449,14 @@ class MyrientView(ft.Column):
             progress = dl.start_downloads()
             if progress.completed > 0:
                 self.status_text.value = f"Downloaded: {name}"
+                downloaded_path = os.path.join(self._download_folder, name)
+                if os.path.isfile(downloaded_path):
+                    _copy_download_to_local_cache(downloaded_path)
+                self.state.emit_activity("ui:myrient:download:success", f"Downloaded: {name}", MOCHA["green"])
                 _show_snack(self._pg, f"Downloaded: {name}", MOCHA["green"])
             else:
                 self.status_text.value = f"Failed: {name}"
+                self.state.emit_activity("ui:myrient:download:failed", f"Download failed: {name}", MOCHA["red"])
                 _show_snack(self._pg, f"Download failed: {name}", MOCHA["red"])
             try:
                 self.status_text.update()
@@ -1535,6 +1606,7 @@ class SettingsView(ft.Column):
         apply_runtime_settings(self.state.settings, profile_name)
         self.build_content()
         self.update()
+        self.state.emit_activity("ui:settings:profile", f"Profile changed: {profile_name.replace('_', ' ').title()}", MOCHA["green"])
         _show_snack(self._pg, f"Profile changed: {profile_name.replace('_', ' ').title()}", MOCHA["green"])
 
     def _save_settings(self, e):
@@ -1555,8 +1627,10 @@ class SettingsView(ft.Column):
             save_settings(s)
             apply_runtime_settings(s)
             self.state.persist_session()
+            self.state.emit_activity("ui:settings:save", "Settings saved.", MOCHA["green"])
             _show_snack(self._pg, "Settings saved!", MOCHA["green"])
         except Exception as ex:
+            self.state.emit_activity("ui:settings:save_error", f"Save error: {ex}", MOCHA["red"])
             _show_snack(self._pg, f"Save error: {ex}", MOCHA["red"])
 
     def _reset_settings(self, e):
@@ -1566,6 +1640,7 @@ class SettingsView(ft.Column):
         self.build_content()
         self.update()
         self.state.persist_session()
+        self.state.emit_activity("ui:settings:reset", "Settings reset to defaults.", MOCHA["green"])
         _show_snack(self._pg, "Settings reset to defaults.", MOCHA["green"])
 
 
@@ -1583,21 +1658,30 @@ def main(page: ft.Page):
 
     state = AppState()
     state.restore_session()
+    flet_version = getattr(ft, "__version__", "unknown")
+    state.emit_activity("startup:ui", "Flet UI initialized.", MOCHA["green"])
+    state.emit_activity("startup:flet_version", f"Flet runtime version: {flet_version}", MOCHA["subtext0"])
+    if flet_version != "unknown" and _version_tuple(flet_version) < _version_tuple(MIN_FLET_VERSION):
+        state.emit_activity("startup:flet_version:warning", f"Flet {flet_version} is below required {MIN_FLET_VERSION}.", MOCHA["yellow"])
     content_area = ft.Container(expand=True, bgcolor=MOCHA["base"])
     session_save_picker = ft.FilePicker()
     page.services.append(session_save_picker)
 
     def ask_new_session():
+        state.emit_activity("ui:new_session:prompt_opened", "New session prompt opened.", MOCHA["blue"])
+
         def _reset_session(clear_cache: bool, close_dialog: Optional[ft.Control] = None):
             if clear_cache:
                 _clear_app_cache()
             state.reset_session()
+            state.emit_activity("ui:new_session:reset", "Session reset completed.", MOCHA["green"])
             switch_view(0)
             if close_dialog:
                 _safe_close_overlay(page, close_dialog)
             _show_snack(page, "Nova sessão iniciada.", MOCHA["green"])
 
         async def _save_and_reset(_):
+            state.emit_activity("ui:new_session:save_confirmed", "User chose to save before starting a new session.", MOCHA["blue"])
             os.makedirs(SESSION_EXPORTS_DIR, exist_ok=True)
             default_name = f"session-{int(time.time())}.romcol.json"
             save_path = await session_save_picker.save_file(
@@ -1607,6 +1691,7 @@ def main(page: ft.Page):
                 allowed_extensions=["json"],
             )
             if not save_path:
+                state.emit_activity("ui:new_session:save_picker_cancel", "Save collection dialog canceled.", MOCHA["peach"])
                 _show_snack(page, "Salvar cancelado.", MOCHA["peach"])
                 return
 
@@ -1622,19 +1707,29 @@ def main(page: ft.Page):
                     unidentified=[s.to_dict() for s in state.unidentified],
                 )
                 state.collection_manager.save(collection, filepath=save_path)
+                state.emit_activity("ui:new_session:save_success", f"Collection saved before reset: {save_path}", MOCHA["green"])
+                _show_snack(page, "Coleção salva com sucesso.", MOCHA["green"])
                 _reset_session(clear_cache=True, close_dialog=dialog)
             except Exception as ex:
+                state.emit_activity("ui:new_session:save_error", f"Error saving collection before reset: {ex}", MOCHA["red"])
                 _show_snack(page, f"Erro ao salvar coleção: {ex}", MOCHA["red"], 5000)
 
         def _dont_save(_):
+            state.emit_activity("ui:new_session:no_save", "User skipped saving current collection.", MOCHA["peach"])
+            _show_snack(page, "Coleção atual descartada.", MOCHA["peach"])
             _reset_session(clear_cache=True, close_dialog=dialog)
+
+        def _cancel(_):
+            state.emit_activity("ui:new_session:cancel", "New session canceled.", MOCHA["overlay0"])
+            _safe_close_overlay(page, dialog)
+            _show_snack(page, "Nova sessão cancelada.", MOCHA["overlay0"])
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Nova sessão"),
             content=ft.Text("Deseja salvar a coleção atual antes de iniciar uma sessão limpa?"),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda e: _safe_close_overlay(page, dialog)),
+                ft.TextButton("Cancelar", on_click=_cancel),
                 ft.TextButton("Não", on_click=_dont_save),
                 ft.ElevatedButton("Sim", on_click=_save_and_reset),
             ],
@@ -1642,6 +1737,7 @@ def main(page: ft.Page):
         _safe_open_overlay(page, dialog)
 
     def navigate(index: int):
+        state.emit_activity("ui:navigate", f"Navigated to view index {index}.", MOCHA["blue"])
         nav_rail.selected_index = index
         nav_rail.update()
         switch_view(index)
@@ -1672,10 +1768,10 @@ def main(page: ft.Page):
 
     nav_rail = ft.NavigationRail(
         selected_index=0,
-        extended=True,
-        label_type=ft.NavigationRailLabelType.ALL,
-        min_width=230,
-        min_extended_width=230,
+        extended=False,
+        label_type=ft.NavigationRailLabelType.NONE,
+        min_width=115,
+        min_extended_width=115,
         bgcolor=MOCHA["mantle"],
         indicator_color=MOCHA["surface1"],
         leading=ft.Container(
@@ -1706,7 +1802,7 @@ def main(page: ft.Page):
             ft.NavigationRailDestination(icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED, selected_icon=ft.Icons.CLOUD_DOWNLOAD, label="Myrient"),
             ft.NavigationRailDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label=_tr("menu_settings")),
         ],
-        on_change=lambda e: switch_view(e.control.selected_index),
+        on_change=lambda e: navigate(e.control.selected_index),
     )
 
     page.add(ft.Row(controls=[
@@ -1718,6 +1814,8 @@ def main(page: ft.Page):
     page.on_disconnect = lambda e: state.persist_session()
 
     switch_view(0)
+    if flet_version != "unknown" and _version_tuple(flet_version) < _version_tuple(MIN_FLET_VERSION):
+        _show_snack(page, f"Aviso: Flet {flet_version} < {MIN_FLET_VERSION}. Atualize para evitar incompatibilidades.", MOCHA["yellow"], 6000)
 
 
 # ─── Entry Point ─────────────────────────────────────────────────────────────────

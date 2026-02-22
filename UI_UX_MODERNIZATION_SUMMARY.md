@@ -287,3 +287,6 @@ The ROM Manager GUI now provides interactions familiar to Windows Explorer users
 **Implementation Date:** 2026-02-16
 **Status:** Ready for testing and deployment
 **Backward Compatibility:** 100% - All existing functionality preserved
+
+
+- Flet: NavigationRail lateral compactado para largura mínima de 115px em modo ícones para aumentar a área útil de conteúdo.
