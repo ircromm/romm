@@ -38,7 +38,6 @@ Core modules identified in the project:
 * `parser` – DAT XML parsing
 * `scanner` – filesystem ROM scanning + hashing
 * `matcher` – ROM ↔ DAT matching logic
-* `downloader` – DAT download support
 * `utils` – helpers
 * `shared_config` – configuration layer
 * `router` – API endpoints
@@ -299,43 +298,24 @@ It is a full-stack ROM management tool intended for structured archival organiza
 
 ---
 
-## 12. Download Engine
+## 12. Direct Download Features
 
-The application downloads ROMs from Myrient (myrient.erista.me) sequentially, one file at a time — matching how a browser downloads files.
+Direct ROM download/search features were removed from the application.
 
-### Key features:
+The app now focuses on:
+- DAT parsing and validation
+- ROM scanning and matching
+- Organization and reporting
 
-* Single-file sequential downloads (full bandwidth per file)
-* Configurable delay between downloads (0-60 seconds, default: 5s)
-* Streaming CRC32 verification during download
-* Connection pooling with keep-alive for performance
-* Pause, resume, and cancel controls
-* Automatic retry with exponential backoff
 
-### Configuring download delay:
+## 13. Language Selection
 
-CLI:
-  python main.py --dat nointro.dat --roms ./roms --download-delay 10
+The app now includes a language selector in desktop menus:
+- **English** (default)
+- **Português Brasileiro**
 
-GUI:
-  Downloads > Download Missing ROMs > "Delay between downloads" spinbox
+Where to change:
+- Launcher window: `Language` menu
+- Tkinter desktop app: `Language` menu
 
-Web:
-  Download dialog > "Delay between downloads" input field
-
-The delay is a courtesy wait between file completions. During each individual download, the connection runs at full speed with no throttling.
-
----
-
-## 13. Myrient System Catalog
-
-The downloader includes a built-in catalog of ~50 systems mapped to their Myrient URLs, covering:
-
-* Nintendo (NES, SNES, N64, GB, GBA, DS, 3DS, GameCube, Wii, Wii U)
-* Sony (PS1, PS2, PS3, PSP, Vita)
-* Sega (Master System, Genesis, Saturn, Dreamcast, Game Gear, 32X)
-* Microsoft (Xbox, Xbox 360)
-* Atari (2600, 5200, 7800, Jaguar, Lynx, ST)
-* NEC (PC Engine, SuperGrafx, PC Engine CD, PC-FX)
-* SNK (Neo Geo Pocket, Neo Geo CD)
-* And many more (Commodore, Bandai, Coleco, Panasonic, Sharp, etc.)
+Default language at startup is **English**.
