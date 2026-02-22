@@ -1,5 +1,5 @@
 """
-Graphical user interface for ROM Manager (tkinter)
+Graphical user interface for R0MM (tkinter)
 """
 
 from __future__ import annotations
@@ -29,16 +29,62 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
+from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor, start_monitored_thread
+from . import i18n as _i18n
+
+LANG_EN = getattr(_i18n, "LANG_EN", "en")
+LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
+
+
+def _tr(key, **kwargs):
+    func = getattr(_i18n, "tr", None)
+    if callable(func):
+        return func(key, **kwargs)
+    return key
+
+
+def _set_language(lang):
+    func = getattr(_i18n, "set_language", None)
+    if callable(func):
+        func(lang)
+
+
+def _safe_get_language():
+    func = getattr(_i18n, "get_language", None)
+    if callable(func):
+        return func()
+    return LANG_EN
+from .blindmatch import build_blindmatch_rom
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
 )
 
-try:
-    from .myrient_downloader import MyrientDownloader, DownloadProgress, DownloadStatus
-    MYRIENT_AVAILABLE = True
-except Exception:
-    MYRIENT_AVAILABLE = False
+
+
+
+class _TkToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _e=None):
+        if self.tip or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 18
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tk.Label(tw, text=self.text, bg="#111827", fg="#e5e7eb", relief=tk.SOLID, borderwidth=1, padx=6, pady=3).pack()
+
+    def _hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
 
 
 class ROMManagerGUI:
@@ -49,7 +95,9 @@ class ROMManagerGUI:
             raise RuntimeError("tkinter is not available")
 
         self.root = tk.Tk()
-        self.root.title("ROM Collection Manager v2")
+        install_tk_exception_bridge(self.root)
+        monitor_action("tkinter gui opened")
+        self.root.title(f"{_tr('title_main')} v2")
         self.root.geometry("1300x850")
         self.root.minsize(1000, 650)
 
@@ -72,10 +120,13 @@ class ROMManagerGUI:
             'ms': {'column': None, 'reverse': False},
         }
 
+        self._tooltips = []
+
         # Setup
         self._setup_theme()
         self._build_menu()
         self._build_ui()
+        self._apply_auto_tooltips()
 
     # ── Theme ─────────────────────────────────────────────────────
 
@@ -108,32 +159,38 @@ class ROMManagerGUI:
         menubar = tk.Menu(self.root, bg=self.colors['surface'], fg=self.colors['fg'])
 
         file_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        file_menu.add_command(label="Save Collection...", command=self._save_collection)
-        file_menu.add_command(label="Open Collection...", command=self._open_collection)
+        file_menu.add_command(label=_tr("menu_save_collection"), command=self._save_collection)
+        file_menu.add_command(label=_tr("menu_open_collection"), command=self._open_collection)
         file_menu.add_separator()
         self._recent_menu = tk.Menu(file_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        file_menu.add_cascade(label="Recent Collections", menu=self._recent_menu)
+        file_menu.add_cascade(label=_tr("menu_recent_collections"), menu=self._recent_menu)
         self._refresh_recent_menu()
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
-        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label=_tr("menu_exit"), command=self.root.quit)
+        menubar.add_cascade(label=_tr("menu_file"), menu=file_menu)
 
         dat_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        dat_menu.add_command(label="DAT Library...", command=self._show_dat_library)
-        menubar.add_cascade(label="DATs", menu=dat_menu)
+        dat_menu.add_command(label=_tr("menu_dat_library"), command=self._show_dat_library)
+        menubar.add_cascade(label=_tr("menu_dats"), menu=dat_menu)
 
         export_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        export_menu.add_command(label="Export Missing (TXT)...", command=lambda: self._export_missing('txt'))
-        export_menu.add_command(label="Export Missing (CSV)...", command=lambda: self._export_missing('csv'))
-        export_menu.add_command(label="Export Missing (JSON)...", command=lambda: self._export_missing('json'))
-        menubar.add_cascade(label="Export", menu=export_menu)
+        export_menu.add_command(label=_tr("menu_export_missing_txt"), command=lambda: self._export_missing('txt'))
+        export_menu.add_command(label=_tr("menu_export_missing_csv"), command=lambda: self._export_missing('csv'))
+        export_menu.add_command(label=_tr("menu_export_missing_json"), command=lambda: self._export_missing('json'))
+        menubar.add_cascade(label=_tr("menu_export"), menu=export_menu)
 
-        dl_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        dl_menu.add_command(label="Myrient Browser...", command=self._show_myrient_browser)
-        dl_menu.add_separator()
-        dl_menu.add_command(label="Settings", command=self._show_settings)
-        dl_menu.add_command(label="About", command=self._show_about)
-        menubar.add_cascade(label="Downloads", menu=dl_menu)
+        help_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        help_menu.add_command(label=_tr("menu_settings"), command=self._show_settings)
+        help_menu.add_command(label=_tr("menu_about"), command=self._show_about)
+        menubar.add_cascade(label=_tr("menu_help"), menu=help_menu)
+
+        lang_var = tk.StringVar(value=_safe_get_language())
+        lang_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        lang_menu.add_radiobutton(label=_tr("language_english"), variable=lang_var, value=LANG_EN,
+                                  command=lambda: self._change_language(LANG_EN))
+        lang_menu.add_radiobutton(label=_tr("language_ptbr"), variable=lang_var, value=LANG_PT_BR,
+                                  command=lambda: self._change_language(LANG_PT_BR))
+        menubar.add_cascade(label=_tr("menu_language"), menu=lang_menu)
 
         self.root.config(menu=menubar)
 
@@ -144,20 +201,20 @@ class ROMManagerGUI:
         main.pack(fill=tk.BOTH, expand=True)
 
         # Header
-        ttk.Label(main, text="ROM Collection Manager", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(main, text=_tr("title_main"), style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
 
         # Top: DATs + Scan
         top = ttk.Frame(main)
         top.pack(fill=tk.X, pady=(0, 8))
 
         # DAT Panel
-        dat_frame = ttk.LabelFrame(top, text="DAT Files", padding=8)
+        dat_frame = ttk.LabelFrame(top, text=_tr("panel_dat_files"), padding=8)
         dat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
         dat_btn = ttk.Frame(dat_frame)
         dat_btn.pack(fill=tk.X)
-        ttk.Button(dat_btn, text="Add DAT...", command=self._add_dat).pack(side=tk.LEFT)
-        ttk.Button(dat_btn, text="Remove", command=self._remove_dat).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(dat_btn, text="Library...", command=self._show_dat_library).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(dat_btn, text=_tr("btn_add_dat"), command=self._add_dat).pack(side=tk.LEFT)
+        ttk.Button(dat_btn, text=_tr("btn_remove"), command=self._remove_dat).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(dat_btn, text=_tr("btn_library"), command=self._show_dat_library).pack(side=tk.LEFT, padx=(5, 0))
         
         # DAT List with Scrollbar (Fixed Structure)
         dat_list_frame = ttk.Frame(dat_frame)
@@ -172,24 +229,28 @@ class ROMManagerGUI:
         dat_sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.dat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        self.dat_info_var = tk.StringVar(value="No DATs loaded")
+        self.dat_info_var = tk.StringVar(value=_tr("no_dats_loaded"))
         ttk.Label(dat_frame, textvariable=self.dat_info_var).pack(anchor=tk.W, pady=(3, 0))
 
         # Scan Panel
-        scan_frame = ttk.LabelFrame(top, text="Scan ROMs", padding=8)
+        scan_frame = ttk.LabelFrame(top, text=_tr("panel_scan"), padding=8)
         scan_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 0))
         scan_row = ttk.Frame(scan_frame)
         scan_row.pack(fill=tk.X)
-        self.scan_path_var = tk.StringVar(value="No folder selected")
+        self.scan_path_var = tk.StringVar(value=_tr("no_folder_selected"))
         ttk.Label(scan_row, textvariable=self.scan_path_var, width=40).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(scan_row, text="Browse...", command=self._select_folder).pack(side=tk.LEFT)
-        ttk.Button(scan_row, text="Scan", command=self._start_scan).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(scan_row, text=_tr("btn_select_folder"), command=self._select_folder).pack(side=tk.LEFT)
+        ttk.Button(scan_row, text=_tr("btn_scan"), command=self._start_scan).pack(side=tk.LEFT, padx=(5, 0))
         opts = ttk.Frame(scan_frame)
         opts.pack(fill=tk.X, pady=(5, 0))
         self.scan_archives_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opts, text="Scan inside ZIPs", variable=self.scan_archives_var).pack(side=tk.LEFT)
+        ttk.Checkbutton(opts, text=_tr("scan_inside_zips"), variable=self.scan_archives_var).pack(side=tk.LEFT)
         self.recursive_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opts, text="Recursive", variable=self.recursive_var).pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Checkbutton(opts, text=_tr("recursive"), variable=self.recursive_var).pack(side=tk.LEFT, padx=(15, 0))
+        self.blindmatch_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="BlindMatch", variable=self.blindmatch_var).pack(side=tk.LEFT, padx=(15, 0))
+        self.blindmatch_system_var = tk.StringVar(value="")
+        ttk.Entry(opts, textvariable=self.blindmatch_system_var, width=20).pack(side=tk.LEFT, padx=(6, 0))
         self.progress_var = tk.StringVar(value="")
         ttk.Label(scan_frame, textvariable=self.progress_var).pack(anchor=tk.W)
         self.progress_bar = ttk.Progressbar(scan_frame, mode='determinate')
@@ -198,7 +259,7 @@ class ROMManagerGUI:
         # Search
         sf = ttk.Frame(main)
         sf.pack(fill=tk.X, pady=(0, 5))
-        ttk.Label(sf, text="Search:").pack(side=tk.LEFT)
+        ttk.Label(sf, text=_tr("search")).pack(side=tk.LEFT)
         self._search_var = tk.StringVar()
         self._search_var.trace_add('write', self._on_search)
         ttk.Entry(sf, textvariable=self._search_var, width=40).pack(side=tk.LEFT, padx=(8, 0), fill=tk.X, expand=True)
@@ -209,21 +270,21 @@ class ROMManagerGUI:
 
         # Identified
         id_f = ttk.Frame(self.notebook)
-        self.notebook.add(id_f, text="Identified ROMs")
+        self.notebook.add(id_f, text=_tr("tab_identified"))
         self.id_tree = self._make_tree(id_f, IDENTIFIED_COLUMNS)
         self._setup_region_tags(self.id_tree)
 
         # Unidentified
         un_f = ttk.Frame(self.notebook)
-        self.notebook.add(un_f, text="Unidentified Files")
+        self.notebook.add(un_f, text=_tr("tab_unidentified_files"))
         un_tb = ttk.Frame(un_f)
         un_tb.pack(fill=tk.X, pady=(0, 3))
-        ttk.Button(un_tb, text="Force to Identified", command=self._force_identified).pack(side=tk.LEFT)
+        ttk.Button(un_tb, text=_tr("force_to_identified"), command=self._force_identified).pack(side=tk.LEFT)
         self.un_tree = self._make_tree(un_f, UNIDENTIFIED_COLUMNS)
 
         # Missing
         ms_f = ttk.Frame(self.notebook)
-        self.notebook.add(ms_f, text="Missing ROMs")
+        self.notebook.add(ms_f, text=_tr("tab_missing_roms"))
 
         # Toolbar (ABOVE table)
         ms_toolbar = ttk.Frame(ms_f)
@@ -232,14 +293,12 @@ class ROMManagerGUI:
         # Left side: View actions
         ms_left = ttk.Frame(ms_toolbar)
         ms_left.pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(ms_left, text="Refresh", command=self._refresh_missing).pack(side=tk.LEFT)
-        ttk.Button(ms_left, text="Search Archive.org", command=self._search_archive).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(ms_left, text=_tr("refresh"), command=self._refresh_missing).pack(side=tk.LEFT)
+        ttk.Button(ms_left, text=_tr("search_archive"), command=self._search_archive).pack(side=tk.LEFT, padx=(5, 0))
 
         # Right side: Download actions with dropdown
         ms_right = ttk.Frame(ms_toolbar)
         ms_right.pack(side=tk.RIGHT)
-        ttk.Button(ms_right, text="Download Selected", command=self._download_selected_missing).pack(side=tk.LEFT)
-        ttk.Button(ms_right, text="Download All Missing", command=self._download_missing_dialog).pack(side=tk.LEFT, padx=(5, 0))
 
         # Selection count label
         self.ms_selection_var = tk.StringVar(value="")
@@ -248,7 +307,7 @@ class ROMManagerGUI:
         # Completeness info (BELOW toolbar)
         ms_info = ttk.Frame(ms_f)
         ms_info.pack(fill=tk.X, padx=0, pady=(0, 3))
-        self.completeness_var = tk.StringVar(value="Load DATs and scan to see missing ROMs")
+        self.completeness_var = tk.StringVar(value=_tr("completeness_hint"))
         ttk.Label(ms_info, textvariable=self.completeness_var, style='Stats.TLabel').pack(side=tk.LEFT)
 
         # The table itself
@@ -261,36 +320,35 @@ class ROMManagerGUI:
         self.ms_tree.bind('<Control-Button-1>', lambda e: self.root.after(10, self._update_ms_selection_count))
 
         # Stats
-        self.stats_var = tk.StringVar(value="No files scanned")
+        self.stats_var = tk.StringVar(value=_tr("stats_no_files"))
         ttk.Label(main, textvariable=self.stats_var, style='Stats.TLabel').pack(anchor=tk.W, pady=(0, 8))
 
         # Organization
-        org = ttk.LabelFrame(main, text="Organization", padding=8)
+        org = ttk.LabelFrame(main, text=_tr("organization"), padding=8)
         org.pack(fill=tk.X)
         sr = ttk.Frame(org)
         sr.pack(fill=tk.X)
-        ttk.Label(sr, text="Strategy:").pack(side=tk.LEFT)
+        ttk.Label(sr, text=_tr("strategy")).pack(side=tk.LEFT)
         self.strategy_var = tk.StringVar(value='1g1r')
         for s in STRATEGIES:
             ttk.Radiobutton(sr, text=s['name'], value=s['id'], variable=self.strategy_var).pack(side=tk.LEFT, padx=(8, 0))
         orw = ttk.Frame(org)
         orw.pack(fill=tk.X, pady=(8, 0))
-        ttk.Label(orw, text="Output:").pack(side=tk.LEFT)
+        ttk.Label(orw, text=_tr("output")).pack(side=tk.LEFT)
         self.output_var = tk.StringVar()
         ttk.Entry(orw, textvariable=self.output_var, width=45).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(orw, text="Browse...", command=self._select_output).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Label(orw, text="Action:").pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Button(orw, text=_tr("browse"), command=self._select_output).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(orw, text=f"{_tr('action')}:" ).pack(side=tk.LEFT, padx=(15, 0))
         self.action_var = tk.StringVar(value='copy')
-        ttk.Radiobutton(orw, text="Copy", value='copy', variable=self.action_var).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Radiobutton(orw, text="Move", value='move', variable=self.action_var).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(orw, text="Preview", command=self._preview).pack(side=tk.LEFT, padx=(15, 0))
-        ttk.Button(orw, text="Organize!", command=self._organize).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(orw, text="Undo", command=self._undo).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Radiobutton(orw, text=_tr("copy_action"), value='copy', variable=self.action_var).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Radiobutton(orw, text=_tr("move_action"), value='move', variable=self.action_var).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(orw, text=_tr("btn_preview"), command=self._preview).pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Button(orw, text=_tr("organize_now"), command=self._organize).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(orw, text=_tr("btn_undo"), command=self._undo).pack(side=tk.LEFT, padx=(5, 0))
 
         # Keyboard shortcuts
         self.root.bind('<Control-a>', self._on_select_all)
         self.root.bind('<Control-c>', self._on_copy)
-        self.root.bind('<Control-d>', self._on_download)
         self.root.bind('<F5>', self._on_refresh)
         self.root.bind('<Delete>', self._on_delete_key)
         self.root.bind('<Escape>', self._on_escape)
@@ -325,6 +383,36 @@ class ROMManagerGUI:
         tree.bind('<Button-3>', lambda e: self._show_context_menu(e, tree))
         return tree
 
+    def _apply_auto_tooltips(self, root_widget=None):
+        w = root_widget or self.root
+        for child in w.winfo_children():
+            try:
+                text = child.cget("text") if "text" in child.keys() else ""
+            except Exception:
+                text = ""
+            if text and child.winfo_class() in {"TButton", "Button", "TCheckbutton", "TRadiobutton", "Label"}:
+                tooltip_map = {
+                    _tr("btn_add_dat"): _tr("tip_add_dat"),
+                    _tr("btn_remove"): _tr("tip_remove_dat"),
+                    _tr("btn_library"): _tr("tip_open_dat_library"),
+                    _tr("btn_select_folder"): _tr("tip_select_rom_folder"),
+                    _tr("btn_scan"): _tr("tip_start_scan"),
+                    _tr("scan_inside_zips"): _tr("tip_scan_archives"),
+                    _tr("recursive"): _tr("tip_recursive_scan"),
+                    "BlindMatch": _tr("tip_blindmatch_toggle"),
+                    _tr("force_to_identified"): _tr("tip_force_identified"),
+                    _tr("refresh"): _tr("tip_refresh_missing"),
+                    _tr("search_archive"): _tr("tip_search_archive"),
+                    _tr("browse"): _tr("tip_select_output_folder"),
+                    _tr("btn_preview"): _tr("tip_preview_organization"),
+                    _tr("organize_now"): _tr("tip_organize_now"),
+                    _tr("btn_undo"): _tr("tip_undo_last"),
+                    _tr("menu_save_collection").replace("...", ""): _tr("tip_save_collection"),
+                    _tr("menu_open_collection").replace("...", ""): _tr("tip_open_collection"),
+                }
+                self._tooltips.append(_TkToolTip(child, tooltip_map.get(text, text)))
+            self._apply_auto_tooltips(child)
+
     def _setup_region_tags(self, tree):
         for region, colors in REGION_COLORS.items():
             tree.tag_configure(f'r_{region}', foreground=colors['fg'])
@@ -356,12 +444,12 @@ class ROMManagerGUI:
         """Context menu for Identified tab"""
         menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
 
-        menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-        menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
+        menu.add_command(label=_tr("copy_action"), command=lambda: self._copy_to_clipboard(tree, item, 'name'))
+        menu.add_command(label=_tr("copy_crc32"), command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
         menu.add_separator()
-        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
+        menu.add_command(label=_tr("search_archive"), command=lambda: self._search_archive_for_item(tree, item))
         menu.add_separator()
-        menu.add_command(label="Open Folder", command=lambda: self._open_rom_folder(tree, item))
+        menu.add_command(label=_tr("open_folder"), command=lambda: self._open_rom_folder(tree, item))
 
         menu.post(event.x_root, event.y_root)
 
@@ -369,13 +457,13 @@ class ROMManagerGUI:
         """Context menu for Unidentified tab"""
         menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
 
-        menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-        menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
+        menu.add_command(label=_tr("copy_action"), command=lambda: self._copy_to_clipboard(tree, item, 'name'))
+        menu.add_command(label=_tr("copy_crc32"), command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
         menu.add_separator()
-        menu.add_command(label="Force to Identified", command=lambda: self._force_identified_from_context(tree, item))
-        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
+        menu.add_command(label=_tr("force_to_identified"), command=lambda: self._force_identified_from_context(tree, item))
+        menu.add_command(label=_tr("search_archive"), command=lambda: self._search_archive_for_item(tree, item))
         menu.add_separator()
-        menu.add_command(label="Open Folder", command=lambda: self._open_rom_folder(tree, item))
+        menu.add_command(label=_tr("open_folder"), command=lambda: self._open_rom_folder(tree, item))
 
         menu.post(event.x_root, event.y_root)
 
@@ -383,13 +471,12 @@ class ROMManagerGUI:
         """Context menu for Missing tab"""
         menu = tk.Menu(tree, tearoff=False, bg=self.colors['surface'], fg=self.colors['fg'])
 
-        menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
-        menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
+        menu.add_command(label=_tr("copy_action"), command=lambda: self._copy_to_clipboard(tree, item, 'name'))
+        menu.add_command(label=_tr("copy_crc32"), command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
         menu.add_separator()
-        menu.add_command(label="Download", command=self._download_selected_missing)
         menu.add_separator()
-        menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
-        menu.add_command(label="Copy to Clipboard", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
+        menu.add_command(label=_tr("search_archive"), command=lambda: self._search_archive_for_item(tree, item))
+        menu.add_command(label=_tr("copy_to_clipboard"), command=lambda: self._copy_to_clipboard(tree, item, 'name'))
 
         menu.post(event.x_root, event.y_root)
 
@@ -410,7 +497,7 @@ class ROMManagerGUI:
                 try:
                     self.root.clipboard_clear()
                     self.root.clipboard_append(crc_value)
-                    messagebox.showinfo("Copied", f"CRC32 copied: {crc_value}")
+                    messagebox.showinfo(_tr("copied"), _tr("copied_crc", value=crc_value))
                 except:
                     pass
         elif copy_type == 'name':
@@ -419,7 +506,7 @@ class ROMManagerGUI:
             try:
                 self.root.clipboard_clear()
                 self.root.clipboard_append(name_value)
-                messagebox.showinfo("Copied", f"Copied: {name_value}")
+                messagebox.showinfo(_tr("copied"), _tr("copied_name", value=name_value))
             except:
                 pass
 
@@ -457,7 +544,7 @@ class ROMManagerGUI:
                     os.startfile(folder_path)
         elif tree == self.ms_tree:
             # Missing ROMs don't have paths, so skip
-            messagebox.showinfo("Info", "Missing ROMs don't have local paths.")
+            messagebox.showinfo(_tr("info"), _tr("missing_no_local_paths"))
 
     def _force_identified_from_context(self, tree, item):
         """Force move an unidentified item to identified (from context menu)"""
@@ -500,7 +587,7 @@ class ROMManagerGUI:
             return 'break'
 
         # Ask user what to copy
-        response = messagebox.askyesno("Copy", "Copy CRC32? (No = copy names)")
+        response = messagebox.askyesno(_tr("copy"), _tr("copy_crc_question"))
         copy_type = 'crc' if response else 'name'
 
         # Copy first selected item
@@ -509,14 +596,6 @@ class ROMManagerGUI:
 
         return 'break'
 
-    def _on_download(self, event=None):
-        """Ctrl+D: Download selected (Missing tab only)"""
-        current_tab = self.notebook.index(self.notebook.select())
-        if current_tab != 2:  # Not Missing tab
-            return 'break'
-
-        self._download_selected_missing()
-        return 'break'
 
     def _on_refresh(self, event=None):
         """F5: Refresh Missing tab"""
@@ -535,8 +614,8 @@ class ROMManagerGUI:
         if not selection:
             return 'break'
 
-        if messagebox.askyesno("Move to Missing",
-                                f"Move {len(selection)} unidentified item(s) to Missing ROMs?"):
+        if messagebox.askyesno(_tr("unidentified_to_missing"),
+                                _tr("move_to_missing_confirm", count=len(selection))):
             self._force_identified()
 
         return 'break'
@@ -647,7 +726,7 @@ class ROMManagerGUI:
     # ── DATs ──────────────────────────────────────────────────────
 
     def _add_dat(self):
-        fp = filedialog.askopenfilename(title="Select DAT File",
+        fp = filedialog.askopenfilename(title=_tr("select_dat_file"),
             filetypes=[("DAT files", "*.dat *.xml *.zip"), ("Compressed", "*.zip *.gz"), ("All", "*.*")])
         if not fp:
             return
@@ -657,7 +736,7 @@ class ROMManagerGUI:
             self._refresh_dats()
             messagebox.showinfo("Loaded", f"{di.system_name}\n{di.rom_count:,} ROMs")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed:\n{e}")
+            messagebox.showerror(_tr("error"), f"Failed:\n{e}")
 
     def _remove_dat(self):
         sel = self.dat_listbox.curselection()
@@ -674,35 +753,34 @@ class ROMManagerGUI:
         for d in dats:
             self.dat_listbox.insert(tk.END, f"{d.system_name} ({d.rom_count:,})")
         total = sum(d.rom_count for d in dats)
-        self.dat_info_var.set(f"{len(dats)} DAT(s), {total:,} ROMs" if dats else "No DATs loaded")
+        self.dat_info_var.set(f"{len(dats)} DAT(s), {total:,} ROMs" if dats else _tr("no_dats_loaded"))
 
     # ── Scan ──────────────────────────────────────────────────────
 
     def _select_folder(self):
-        f = filedialog.askdirectory(title="Select ROM Folder")
+        f = filedialog.askdirectory(title=_tr("select_rom_folder"))
         if f:
             self.scan_path_var.set(f)
 
     def _select_output(self):
-        f = filedialog.askdirectory(title="Select Output Folder")
+        f = filedialog.askdirectory(title=_tr("select_output_folder"))
         if f:
             self.output_var.set(f)
 
     def _start_scan(self):
         folder = self.scan_path_var.get()
-        if folder == "No folder selected" or not os.path.isdir(folder):
-            messagebox.showwarning("Warning", "Select a valid folder")
+        if folder == _tr("no_folder_selected") or not os.path.isdir(folder):
+            messagebox.showwarning(_tr("warning"), _tr("warning_select_valid_folder"))
             return
-        if not self.multi_matcher.matchers:
-            messagebox.showwarning("Warning", "Load at least one DAT first")
+        if not self.blindmatch_var.get() and not self.multi_matcher.matchers:
+            messagebox.showwarning(_tr("warning"), _tr("warning_load_dat_first"))
             return
         self.scanned_files.clear()
         self.identified.clear()
         self.unidentified.clear()
         for t in [self.id_tree, self.un_tree, self.ms_tree]:
             t.delete(*t.get_children())
-        thread = threading.Thread(target=self._scan_worker, args=(folder,), daemon=True)
-        thread.start()
+        start_monitored_thread(lambda: self._scan_worker(folder), name="tk-scan-worker")
 
     def _scan_worker(self, folder):
         rec = self.recursive_var.get()
@@ -718,14 +796,17 @@ class ROMManagerGUI:
                         self._process(sc)
                 else:
                     self._process(FileScanner.scan_file(fp))
-            except Exception:
-                pass
+            except Exception as exc:
+                monitor_action(f"scan error: {exc}")
             pct = int((i + 1) / total * 100) if total else 0
             self.root.after(0, lambda p=pct, c=i+1, t=total: self._prog(p, c, t))
         self.root.after(0, self._scan_done)
 
     def _process(self, sc):
-        m = self.multi_matcher.match(sc)
+        if self.blindmatch_var.get():
+            m = build_blindmatch_rom(sc, self.blindmatch_system_var.get())
+        else:
+            m = self.multi_matcher.match(sc)
         sc.matched_rom = m
         self.scanned_files.append(sc)
         if m:
@@ -757,7 +838,7 @@ class ROMManagerGUI:
         self.progress_var.set("Scan complete!")
         self._update_stats()
         self._refresh_missing()
-        messagebox.showinfo("Done", f"Scanned {len(self.scanned_files):,}\n"
+        messagebox.showinfo(_tr("done"), f"Scanned {len(self.scanned_files):,}\n"
                             f"Identified: {len(self.identified):,}\nUnidentified: {len(self.unidentified):,}")
 
     def _update_stats(self):
@@ -832,7 +913,7 @@ class ROMManagerGUI:
     def _search_archive(self):
         sel = self.ms_tree.selection()
         if not sel:
-            messagebox.showwarning("Warning", "Select missing ROMs first")
+            messagebox.showwarning(_tr("warning"), "Select missing ROMs first")
             return
         for item in sel[:5]:
             vals = self.ms_tree.item(item, 'values')
@@ -846,14 +927,14 @@ class ROMManagerGUI:
     def _force_identified(self):
         sel = self.un_tree.selection()
         if not sel:
-            messagebox.showwarning("Warning", "Select files to force")
+            messagebox.showwarning(_tr("warning"), "Select files to force")
             return
 
         # Show detailed confirmation
         msg = f"Force {len(sel)} unidentified file(s) to Identified?\n\n" \
               "These files will be added to the Identified list\n" \
               "using their filenames as ROM names."
-        if not messagebox.askyesno("Confirm", msg):
+        if not messagebox.askyesno(_tr("confirm"), msg):
             return
 
         for iid in sel:
@@ -874,22 +955,22 @@ class ROMManagerGUI:
     def _preview(self):
         out = self.output_var.get()
         if not out:
-            messagebox.showwarning("Warning", "Select output folder")
+            messagebox.showwarning(_tr("warning"), _tr("warning_select_output"))
             return
         if not self.identified:
-            messagebox.showwarning("Warning", "No identified ROMs")
+            messagebox.showwarning(_tr("warning"), _tr("no_identified"))
             return
         try:
             plan = self.organizer.preview(self.identified, out, self.strategy_var.get(), self.action_var.get())
         except ValueError as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror(_tr("error"), str(e))
             return
         win = tk.Toplevel(self.root)
-        win.title("Organization Preview")
+        win.title(_tr("organization_preview"))
         self._center_window(win, 700, 500)
         win.configure(bg=self.colors['bg'])
         ttk.Label(win, text=f"Strategy: {plan.strategy_description}").pack(anchor=tk.W, padx=10, pady=(10, 0))
-        ttk.Label(win, text=f"Files: {plan.total_files:,} | Size: {format_size(plan.total_size)}").pack(anchor=tk.W, padx=10)
+        ttk.Label(win, text=_tr("files_size", files=f"{plan.total_files:,}", size=format_size(plan.total_size))).pack(anchor=tk.W, padx=10)
         txt = tk.Text(win, bg=self.colors['surface'], fg=self.colors['fg'], font=('Consolas', 9), wrap=tk.NONE)
         txt.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         for a in plan.actions:
@@ -899,10 +980,10 @@ class ROMManagerGUI:
     def _organize(self):
         out = self.output_var.get()
         if not out:
-            messagebox.showwarning("Warning", "Select output folder")
+            messagebox.showwarning(_tr("warning"), _tr("warning_select_output"))
             return
         if not self.identified:
-            messagebox.showwarning("Warning", "No identified ROMs")
+            messagebox.showwarning(_tr("warning"), _tr("no_identified"))
             return
         s = self.strategy_var.get()
         a = self.action_var.get()
@@ -912,21 +993,21 @@ class ROMManagerGUI:
               f"Action: {a}\n" \
               f"Total size: {format_size(total_size)}\n" \
               f"Output: {out}"
-        if not messagebox.askyesno("Confirm", msg):
+        if not messagebox.askyesno(_tr("confirm"), msg):
             return
         try:
             acts = self.organizer.organize(self.identified, out, s, a)
-            messagebox.showinfo("Done", f"Organized {len(acts):,} ROMs!")
+            messagebox.showinfo(_tr("done"), _tr("organized_count", count=f"{len(acts):,}"))
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror(_tr("error"), str(e))
 
     def _undo(self):
         if not self.organizer.get_history_count():
-            messagebox.showinfo("Info", "Nothing to undo")
+            messagebox.showinfo(_tr("info"), _tr("nothing_to_undo"))
             return
-        if messagebox.askyesno("Confirm", "Undo last organization?"):
+        if messagebox.askyesno(_tr("confirm"), _tr("undo_last_org")):
             if self.organizer.undo_last():
-                messagebox.showinfo("Done", "Undo complete")
+                messagebox.showinfo(_tr("done"), _tr("undo_complete"))
 
     # ── Collections ───────────────────────────────────────────────
 
@@ -958,7 +1039,7 @@ class ROMManagerGUI:
         try:
             coll = self.collection_manager.load(fp)
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror(_tr("error"), str(e))
             return
         self.multi_matcher = MultiROMMatcher()
         for di in coll.dat_infos:
@@ -992,7 +1073,7 @@ class ROMManagerGUI:
         self._recent_menu.delete(0, tk.END)
         recent = self.collection_manager.get_recent()
         if not recent:
-            self._recent_menu.add_command(label="(none)", state=tk.DISABLED)
+            self._recent_menu.add_command(label=_tr("none"), state=tk.DISABLED)
             return
         for e in recent[:10]:
             n, p = e.get('name', '?'), e.get('filepath', '')
@@ -1002,10 +1083,10 @@ class ROMManagerGUI:
 
     def _export_missing(self, fmt):
         if not self.multi_matcher.matchers:
-            messagebox.showwarning("Warning", "Load DATs and scan first")
+            messagebox.showwarning(_tr("warning"), _tr("load_dats_scan_first"))
             return
         exts = {'txt': '.txt', 'csv': '.csv', 'json': '.json'}
-        fp = filedialog.asksaveasfilename(title="Export Missing ROMs",
+        fp = filedialog.asksaveasfilename(title=_tr("export_missing_roms"),
             defaultextension=exts.get(fmt, '.txt'),
             filetypes=[(f"{fmt.upper()}", f"*{exts.get(fmt)}"), ("All", "*.*")])
         if not fp:
@@ -1019,11 +1100,11 @@ class ROMManagerGUI:
 
     def _show_settings(self):
         """Show settings dialog (placeholder)"""
-        messagebox.showinfo("Settings", "Settings dialog coming soon!")
+        messagebox.showinfo(_tr("settings_title"), _tr("settings_coming"))
 
     def _show_about(self):
         """Show about dialog"""
-        messagebox.showinfo("About", "ROM Collection Manager v2\n\n"
+        messagebox.showinfo(_tr("about_title"), "R0MM v2\n\n"
                             "A web-based ROM collection organizer\n"
                             "with Windows Explorer-like interface.\n\n"
                             "© 2025")
@@ -1037,13 +1118,13 @@ class ROMManagerGUI:
         src = DATSourceManager()
 
         win = tk.Toplevel(self.root)
-        win.title("DAT Library")
+        win.title(_tr("dat_library"))
         self._center_window(win, 800, 600)
         win.configure(bg=self.colors['bg'])
         win.transient(self.root)
         win.grab_set()
 
-        ttk.Label(win, text="DAT Library", font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
+        ttk.Label(win, text=_tr("dat_library"), font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
         lf = ttk.Frame(win)
         lf.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 5))
         lt = self._make_tree(lf, [
@@ -1071,7 +1152,7 @@ class ROMManagerGUI:
                     lib.import_dat(f)
                     refresh()
                 except Exception as e:
-                    messagebox.showerror("Error", str(e))
+                    messagebox.showerror(_tr("error"), str(e))
 
         def load_sel():
             s = lt.selection()
@@ -1085,521 +1166,34 @@ class ROMManagerGUI:
                     self._refresh_dats()
                     messagebox.showinfo("Loaded", di.system_name)
                 except Exception as e:
-                    messagebox.showerror("Error", str(e))
+                    messagebox.showerror(_tr("error"), str(e))
 
         def rem():
             s = lt.selection()
-            if s and messagebox.askyesno("Confirm", "Remove from library?"):
+            if s and messagebox.askyesno(_tr("confirm"), "Remove from library?"):
                 lib.remove_dat(s[0])
                 refresh()
 
-        ttk.Button(br, text="Import DAT...", command=imp).pack(side=tk.LEFT)
-        ttk.Button(br, text="Load Selected", command=load_sel).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(br, text="Remove", command=rem).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(br, text=_tr("import_dat"), command=imp).pack(side=tk.LEFT)
+        ttk.Button(br, text=_tr("load_selected"), command=load_sel).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(br, text=_tr("btn_remove"), command=rem).pack(side=tk.LEFT, padx=(5, 0))
 
-        ttk.Label(win, text="DAT Sources", font=('Segoe UI', 12, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
+        ttk.Label(win, text=_tr("dat_sources"), font=('Segoe UI', 12, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
         for s in src.get_sources():
             r = ttk.Frame(win)
             r.pack(fill=tk.X, padx=10, pady=2)
             ttk.Label(r, text=s['name'], width=30).pack(side=tk.LEFT)
             ttk.Label(r, text=f"({s['type']})", width=10).pack(side=tk.LEFT)
-            ttk.Button(r, text="Open Page",
+            ttk.Button(r, text=_tr("open_page"),
                        command=lambda sid=s['id']: src.open_source_page(sid)).pack(side=tk.LEFT, padx=(5, 0))
 
-    # ── Myrient Download ───────────────────────────────────────────
-
-    def _check_myrient(self):
-        if not MYRIENT_AVAILABLE:
-            messagebox.showerror("Error", "Myrient downloader not available.\n"
-                                 "Install 'requests': pip install requests")
-            return False
-        return True
-
-    def _download_selected_missing(self):
-        """Download only the selected missing ROMs from the tree."""
-        if not self._check_myrient():
-            return
-        sel = self.ms_tree.selection()
-        if not sel:
-            messagebox.showwarning("Warning", "Select missing ROMs to download")
-            return
-
-        # Collect selected ROM names
-        selected_names = set()
-        for item in sel:
-            vals = self.ms_tree.item(item, 'values')
-            if vals:
-                selected_names.add(vals[0])  # rom_name is first column
-
-        # Find matching ROMInfo objects
-        all_missing = self.multi_matcher.get_missing(self.identified)
-        to_download = [r for r in all_missing if r.name in selected_names]
-
-        if not to_download:
-            messagebox.showwarning("Warning", "Could not match selected ROMs")
-            return
-
-        total_size = sum(r.size for r in to_download)
-        msg = f"Download {len(to_download)} selected ROM(s)?\n\nTotal size: {format_size(total_size)}"
-        self._start_download_flow(to_download, msg)
-
-    def _download_missing_dialog(self):
-        """Download all missing ROMs."""
-        if not self._check_myrient():
-            return
-        if not self.multi_matcher.matchers:
-            messagebox.showwarning("Warning", "Load DATs and scan first")
-            return
-        all_missing = self.multi_matcher.get_missing(self.identified)
-        if not all_missing:
-            messagebox.showinfo("Info", "No missing ROMs!")
-            return
-        total_size = sum(r.size for r in all_missing)
-        msg = f"Download {len(all_missing):,} missing ROM(s)?\n\nTotal size: {format_size(total_size)}"
-        self._start_download_flow(all_missing, msg)
-
-    def _start_download_flow(self, roms_to_download, confirm_msg):
-        """
-        Show a guided download dialog:
-        1. Confirm count
-        2. Choose destination (default = scan folder)
-        3. Resolve URLs (with progress)
-        4. Download sequentially (with progress, pause/cancel)
-        """
-        # Step 1: Determine destination
-        scan_folder = self.scan_path_var.get()
-        default_dest = scan_folder if scan_folder != "No folder selected" and os.path.isdir(scan_folder) else ""
-
-        win = tk.Toplevel(self.root)
-        win.title("Download Missing ROMs")
-        self._center_window(win, 650, 550)
-        win.configure(bg=self.colors['bg'])
-        win.transient(self.root)
-        win.grab_set()
-
-        # Header
-        ttk.Label(win, text="Download Missing ROMs from Myrient",
-                  font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, padx=15, pady=(15, 5))
-
-        # Info
-        info_var = tk.StringVar(value=f"{len(roms_to_download):,} ROMs to download")
-        ttk.Label(win, textvariable=info_var, style='Stats.TLabel').pack(anchor=tk.W, padx=15, pady=(0, 10))
-
-        # Destination
-        dest_frame = ttk.LabelFrame(win, text="Download Destination", padding=8)
-        dest_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
-        dest_var = tk.StringVar(value=default_dest)
-        ttk.Label(dest_frame, text="ROMs will be saved to your scan folder so they're\n"
-                  "automatically detected on next scan.",
-                  foreground=self.colors['fg']).pack(anchor=tk.W)
-        dest_row = ttk.Frame(dest_frame)
-        dest_row.pack(fill=tk.X, pady=(5, 0))
-        ttk.Entry(dest_row, textvariable=dest_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(dest_row, text="Browse...",
-                   command=lambda: dest_var.set(filedialog.askdirectory(title="Download Destination") or dest_var.get())
-                   ).pack(side=tk.LEFT, padx=(5, 0))
-
-        # Delay between downloads
-        delay_frame = ttk.LabelFrame(win, text="Download Settings", padding=8)
-        delay_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
-        delay_row = ttk.Frame(delay_frame)
-        delay_row.pack(fill=tk.X)
-        ttk.Label(delay_row, text="Delay between downloads (seconds):").pack(side=tk.LEFT)
-        delay_var = tk.IntVar(value=5)
-        delay_spin = ttk.Spinbox(delay_row, from_=0, to=60, textvariable=delay_var, width=5)
-        delay_spin.pack(side=tk.LEFT, padx=(8, 0))
-
-        # Progress area
-        prog_frame = ttk.LabelFrame(win, text="Progress", padding=8)
-        prog_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
-
-        status_var = tk.StringVar(value="Ready to start")
-        ttk.Label(prog_frame, textvariable=status_var).pack(anchor=tk.W)
-
-        # Overall progress
-        ttk.Label(prog_frame, text="Overall:").pack(anchor=tk.W, pady=(5, 0))
-        overall_bar = ttk.Progressbar(prog_frame, mode='determinate')
-        overall_bar.pack(fill=tk.X)
-        overall_label = tk.StringVar(value="0 / 0")
-        ttk.Label(prog_frame, textvariable=overall_label).pack(anchor=tk.W)
-
-        # Current file progress
-        ttk.Label(prog_frame, text="Current file:").pack(anchor=tk.W, pady=(5, 0))
-        file_bar = ttk.Progressbar(prog_frame, mode='determinate')
-        file_bar.pack(fill=tk.X)
-        file_label = tk.StringVar(value="")
-        ttk.Label(prog_frame, textvariable=file_label).pack(anchor=tk.W)
-
-        # Log area
-        log = tk.Text(prog_frame, height=6, bg=self.colors['surface'],
-                      fg=self.colors['fg'], font=('Consolas', 8), wrap=tk.WORD)
-        log.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-
-        # Buttons
-        btn_frame = ttk.Frame(win)
-        btn_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
-
-        downloader = [None]  # mutable ref
-        downloading = [False]
-
-        def log_msg(msg):
-            log.insert(tk.END, msg + '\n')
-            log.see(tk.END)
-
-        def on_progress(prog: DownloadProgress):
-            """Called from download thread — schedule GUI updates."""
-            task = prog.current_task
-            def update():
-                # Overall (Corrected Math: based on COMPLETED items, not current index)
-                done_count = prog.completed + prog.failed
-                pct = (done_count / prog.total_count * 100) if prog.total_count else 0
-                overall_bar['value'] = pct
-                overall_label.set(f"{done_count} / {prog.total_count} "
-                                  f"({prog.completed} OK, {prog.failed} failed)")
-
-                # Current file
-                if task:
-                    if task.total_bytes > 0:
-                        fpct = (task.downloaded_bytes / task.total_bytes * 100)
-                        file_bar['value'] = fpct
-                        
-                        # Detailed format: "Filename (5.2MB/10MB - 52%)"
-                        mb_done = task.downloaded_bytes / (1024 * 1024)
-                        mb_total = task.total_bytes / (1024 * 1024)
-                        file_label.set(f"{task.rom_name} ({mb_done:.1f}/{mb_total:.1f} MB - {fpct:.1f}%)")
-                    else:
-                        file_bar.stop()
-                        file_label.set(f"{task.rom_name} — {format_size(task.downloaded_bytes)}")
-
-                    if task.status == DownloadStatus.COMPLETE:
-                        status_var.set(f"Downloaded: {task.rom_name}")
-                    elif task.status == DownloadStatus.FAILED:
-                        status_var.set(f"Failed: {task.rom_name}")
-                        log_msg(f"FAIL: {task.rom_name} — {task.error}")
-                    elif task.status == DownloadStatus.CRC_MISMATCH:
-                        status_var.set(f"CRC mismatch: {task.rom_name}")
-                        log_msg(f"CRC MISMATCH: {task.rom_name} — {task.error}")
-                    elif task.status == DownloadStatus.CANCELLED:
-                        status_var.set("Cancelled")
-
-            win.after(0, update)
-
-        def start_download():
-            dest = dest_var.get().strip()
-            if not dest or not os.path.isdir(dest):
-                messagebox.showwarning("Warning", "Select a valid destination folder", parent=win)
-                return
-
-            start_btn.config(state=tk.DISABLED)
-            pause_btn.config(state=tk.NORMAL)
-            cancel_btn.config(state=tk.NORMAL)
-            downloading[0] = True
-
-            def worker():
-                try:
-                    dl = MyrientDownloader()
-                    downloader[0] = dl
-
-                    # Phase 1: Resolve URLs
-                    win.after(0, lambda: status_var.set("Resolving download URLs..."))
-                    win.after(0, lambda: log_msg("Looking up ROM files on Myrient..."))
-
-                    def resolve_progress(name, cur, tot):
-                        win.after(0, lambda: status_var.set(f"Resolving: {cur}/{tot} — {name}"))
-                        win.after(0, lambda: overall_bar.__setitem__('value', cur / tot * 50))
-
-                    queued = dl.queue_missing_roms(roms_to_download, dest, resolve_progress)
-
-                    win.after(0, lambda: log_msg(f"Found {queued} of {len(roms_to_download)} ROMs on Myrient"))
-
-                    if queued == 0:
-                        win.after(0, lambda: status_var.set("No ROMs found on Myrient"))
-                        win.after(0, lambda: log_msg("None of the missing ROMs were found. They may not be available."))
-                        win.after(0, lambda: start_btn.config(state=tk.NORMAL))
-                        downloading[0] = False
-                        return
-
-                    # Phase 2: Download
-                    win.after(0, lambda: status_var.set(f"Downloading {queued} ROMs..."))
-                    win.after(0, lambda: overall_bar.__setitem__('value', 0))
-
-                    result = dl.start_downloads(on_progress, download_delay=delay_var.get())
-
-                    win.after(0, lambda: status_var.set(
-                        f"Done! {result.completed} downloaded, {result.failed} failed, {result.cancelled} cancelled"))
-                    win.after(0, lambda: overall_bar.__setitem__('value', 100))
-                    win.after(0, lambda: log_msg(
-                        f"COMPLETE: {result.completed} OK, {result.failed} failed, {result.cancelled} cancelled"))
-
-                except Exception as e:
-                    # Capturing 'e' as a local string to pass to thread-safe callback
-                    error_msg = str(e)
-                    win.after(0, lambda: status_var.set(f"Error: {error_msg}"))
-                    win.after(0, lambda: log_msg(f"ERROR: {error_msg}"))
-                finally:
-                    downloading[0] = False
-                    win.after(0, lambda: start_btn.config(state=tk.NORMAL))
-                    win.after(0, lambda: pause_btn.config(state=tk.DISABLED))
-                    win.after(0, lambda: cancel_btn.config(state=tk.DISABLED))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def pause_download():
-            if downloader[0]:
-                if pause_btn.cget('text') == 'Pause':
-                    downloader[0].pause()
-                    pause_btn.config(text='Resume')
-                    status_var.set("Paused")
-                else:
-                    downloader[0].resume()
-                    pause_btn.config(text='Pause')
-                    status_var.set("Resuming...")
-
-        def cancel_download():
-            if downloader[0]:
-                downloader[0].cancel()
-                status_var.set("Cancelling...")
-
-        def on_close():
-            if downloading[0] and downloader[0]:
-                downloader[0].cancel()
-            win.destroy()
-
-        start_btn = ttk.Button(btn_frame, text="Start Download", command=start_download)
-        start_btn.pack(side=tk.LEFT)
-        pause_btn = ttk.Button(btn_frame, text="Pause", command=pause_download, state=tk.DISABLED)
-        pause_btn.pack(side=tk.LEFT, padx=(5, 0))
-        cancel_btn = ttk.Button(btn_frame, text="Cancel", command=cancel_download, state=tk.DISABLED)
-        cancel_btn.pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(btn_frame, text="Close", command=on_close).pack(side=tk.RIGHT)
-
-        win.protocol("WM_DELETE_WINDOW", on_close)
-
-    # ── Myrient Browser ────────────────────────────────────────────
-
-    def _show_myrient_browser(self):
-        """Browse and download ROMs from the Myrient catalog."""
-        if not self._check_myrient():
-            return
-
-        win = tk.Toplevel(self.root)
-        win.title("Myrient ROM Browser")
-        self._center_window(win, 1000, 700)
-        win.configure(bg=self.colors['bg'])
-        win.transient(self.root)
-        win.grab_set()
-
-        # Header
-        ttk.Label(win, text="Myrient ROM Browser",
-                  font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
-        ttk.Label(win, text="Browse and download ROMs from myrient.erista.me",
-                  foreground=self.colors['fg']).pack(anchor=tk.W, padx=10, pady=(0, 10))
-
-        # Main layout: system list on left, files on right
-        panes = ttk.PanedWindow(win, orient=tk.HORIZONTAL)
-        panes.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 5))
-
-        # Left: system list (Corrected with scrollbar in frame)
-        left = ttk.Frame(panes)
-        panes.add(left, weight=1)
-
-        ttk.Label(left, text="Systems:", font=('Segoe UI', 10, 'bold')).pack(anchor=tk.W)
-        sys_search_var = tk.StringVar()
-        ttk.Entry(left, textvariable=sys_search_var, width=30).pack(fill=tk.X, pady=(3, 3))
-
-        sys_frame = ttk.Frame(left)
-        sys_frame.pack(fill=tk.BOTH, expand=True)
-        
-        sys_vsb = ttk.Scrollbar(sys_frame, orient=tk.VERTICAL)
-        sys_list = tk.Listbox(sys_frame, bg=self.colors['surface'], fg=self.colors['fg'],
-                              selectbackground=self.colors['accent'], font=('Segoe UI', 9),
-                              yscrollcommand=sys_vsb.set)
-        sys_vsb.config(command=sys_list.yview)
-        
-        sys_vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        sys_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Right: file list (Corrected with scrollbar)
-        right = ttk.Frame(panes)
-        panes.add(right, weight=2)
-
-        file_toolbar = ttk.Frame(right)
-        file_toolbar.pack(fill=tk.X)
-        ttk.Label(file_toolbar, text="Files:", font=('Segoe UI', 10, 'bold')).pack(side=tk.LEFT)
-        file_search_var = tk.StringVar()
-        ttk.Entry(file_toolbar, textvariable=file_search_var, width=30).pack(side=tk.LEFT, padx=(10, 0))
-        ttk.Button(file_toolbar, text="Search", command=lambda: load_files(filter_text=file_search_var.get())
-                   ).pack(side=tk.LEFT, padx=(5, 0))
-        file_count_var = tk.StringVar(value="")
-        ttk.Label(file_toolbar, textvariable=file_count_var).pack(side=tk.RIGHT)
-
-        # File Tree + Scrollbar container
-        tree_frame = ttk.Frame(right)
-        tree_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        file_vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
-        file_tree = ttk.Treeview(tree_frame, columns=['name', 'size'], show='headings', yscrollcommand=file_vsb.set)
-        file_vsb.config(command=file_tree.yview)
-        
-        file_tree.heading('name', text='ROM Name')
-        file_tree.heading('size', text='Size')
-        file_tree.column('name', width=400)
-        file_tree.column('size', width=100)
-        
-        file_vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        file_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Bottom: download controls
-        bottom = ttk.Frame(win)
-        bottom.pack(fill=tk.X, padx=10, pady=(5, 10))
-        
-        dl_dest_var = tk.StringVar(value=self.scan_path_var.get() if self.scan_path_var.get() != "No folder selected" else "")
-        ttk.Label(bottom, text="Save to:").pack(side=tk.LEFT)
-        ttk.Entry(bottom, textvariable=dl_dest_var, width=40).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(bottom, text="Browse...",
-                   command=lambda: dl_dest_var.set(filedialog.askdirectory() or dl_dest_var.get())
-                   ).pack(side=tk.LEFT, padx=(5, 0))
-        
-        ttk.Button(bottom, text="Download Selected", command=lambda: download_selected()).pack(side=tk.RIGHT)
-
-        # In-Browser Progress Bar
-        status_frame = ttk.Frame(win)
-        status_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        dl_progress = ttk.Progressbar(status_frame, mode='determinate')
-        dl_progress.pack(fill=tk.X, pady=(0, 2))
-        
-        dl_status_var = tk.StringVar(value="")
-        ttk.Label(status_frame, textvariable=dl_status_var, font=('Segoe UI', 9)).pack(anchor=tk.W)
-
-        # Data
-        systems = MyrientDownloader.get_systems()
-        all_systems = [(s['name'], s['category']) for s in systems]
-        current_files = []
-        current_system_url = [None]
-
-        def fill_systems(q=''):
-            sys_list.delete(0, tk.END)
-            q = q.lower()
-            for name, cat in all_systems:
-                if q and q not in name.lower():
-                    continue
-                sys_list.insert(tk.END, f"[{cat}] {name}")
-
-        fill_systems()
-
-        def on_sys_search(*_):
-            fill_systems(sys_search_var.get())
-
-        sys_search_var.trace_add('write', on_sys_search)
-
-        def on_sys_select(event):
-            sel = sys_list.curselection()
-            if not sel:
-                return
-            text = sys_list.get(sel[0])
-            # Extract system name from "[Category] Name"
-            name = text.split('] ', 1)[1] if '] ' in text else text
-            load_files(name)
-
-        sys_list.bind('<<ListboxSelect>>', on_sys_select)
-
-        def load_files(system_name=None, filter_text=''):
-            file_tree.delete(*file_tree.get_children())
-            file_count_var.set("Loading...")
-            win.update_idletasks()
-
-            def worker():
-                try:
-                    dl = MyrientDownloader()
-                    if system_name:
-                        url = dl.find_system_url(system_name)
-                        current_system_url[0] = url
-                        files = dl.list_files(url=url) if url else []
-                    else:
-                        files = dl.list_files(url=current_system_url[0]) if current_system_url[0] else []
-
-                    if filter_text:
-                        q = filter_text.lower()
-                        files = [f for f in files if q in f.name.lower()]
-
-                    nonlocal current_files
-                    current_files = files
-
-                    def update_ui():
-                        file_tree.delete(*file_tree.get_children())
-                        for f in files:
-                            file_tree.insert('', 'end', values=(f.name, f.size_text or '?'))
-                        file_count_var.set(f"{len(files):,} files")
-
-                    win.after(0, update_ui)
-                except Exception as e:
-                    error_msg = str(e)
-                    win.after(0, lambda: file_count_var.set(f"Error: {error_msg}"))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-    
-        def download_selected():
-            sel = file_tree.selection()
-            if not sel:
-                messagebox.showwarning("Warning", "Select files to download", parent=win)
-                return
-            dest = dl_dest_var.get().strip()
-            if not dest:
-                messagebox.showwarning("Warning", "Select download destination", parent=win)
-                return
-
-            # Match selection to file objects
-            to_dl = []
-            for item in sel:
-                vals = file_tree.item(item, 'values')
-                if vals:
-                    name = vals[0]
-                    for f in current_files:
-                        if f.name == name:
-                            to_dl.append(f)
-                            break
-
-            if not to_dl:
-                return
-
-            dl_status_var.set(f"Downloading {len(to_dl)} file(s)...")
-            dl_progress['value'] = 0
-
-            def worker():
-                try:
-                    dl = MyrientDownloader()
-                    for i, f in enumerate(to_dl):
-                        dl.queue_rom(rom_name=f.name, url=f.url, dest_folder=dest)
-                        
-                    def on_prog(prog):
-                        t = prog.current_task
-                        if t:
-                            # Update Bar
-                            pct = (prog.current_index / prog.total_count * 100) if prog.total_count else 0
-                            win.after(0, lambda: dl_progress.__setitem__('value', pct))
-                            
-                            # Update Label with DETAILED progress
-                            if t.total_bytes > 0:
-                                fpct = (t.downloaded_bytes / t.total_bytes * 100)
-                                mb_done = t.downloaded_bytes / (1024 * 1024)
-                                mb_total = t.total_bytes / (1024 * 1024)
-                                msg = f"Downloading: {t.rom_name} ({mb_done:.1f}/{mb_total:.1f} MB - {fpct:.1f}%)"
-                            else:
-                                msg = f"Downloading: {t.rom_name}..."
-                                
-                            win.after(0, lambda: dl_status_var.set(msg))
-
-                    result = dl.start_downloads(on_prog, download_delay=0)
-                    win.after(0, lambda: dl_status_var.set(
-                        f"Done! {result.completed} OK, {result.failed} failed"))
-                    win.after(0, lambda: dl_progress.__setitem__('value', 100))
-                except Exception as e:
-                    error_msg = str(e)
-                    win.after(0, lambda: dl_status_var.set(f"Error: {error_msg}"))
-
-            threading.Thread(target=worker, daemon=True).start()
+    # ── Direct download features removed ───────────────────────────
+
+    def _change_language(self, lang):
+        _set_language(lang)
+        self.root.destroy()
+        app = ROMManagerGUI()
+        app.run()
 
     # ── Run ───────────────────────────────────────────────────────
 
@@ -1608,6 +1202,8 @@ class ROMManagerGUI:
 
 
 def run_gui():
+    logger = setup_runtime_monitor()
+    monitor_action("run_gui called", logger=logger)
     if not GUI_AVAILABLE:
         print("Error: tkinter is not available")
         return 1

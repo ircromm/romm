@@ -1,8 +1,8 @@
-# Windows Explorer UX/UI Patterns for ROM Manager
+# Windows Explorer UX/UI Patterns for R0MM
 
 ## Quick Start Guide
 
-This collection of documents provides comprehensive guidance for modernizing ROM Manager's user interface by applying proven Windows Explorer interaction patterns.
+This collection of documents provides comprehensive guidance for modernizing R0MM's user interface by applying proven Windows Explorer interaction patterns.
 
 ### Documents Included
 
@@ -49,7 +49,7 @@ This collection of documents provides comprehensive guidance for modernizing ROM
 
 ## What Are These Patterns?
 
-Windows Explorer has been refined over 30+ years to optimize file management workflows. ROM Manager uses similar workflows (scanning, organizing, filtering collections), so these patterns directly apply.
+Windows Explorer has been refined over 30+ years to optimize file management workflows. R0MM uses similar workflows (scanning, organizing, filtering collections), so these patterns directly apply.
 
 **Key Patterns Documented:**
 
@@ -64,14 +64,14 @@ Windows Explorer has been refined over 30+ years to optimize file management wor
 
 ---
 
-## Current ROM Manager State
+## Current R0MM State
 
 **Location:** `D:\1 romm\APP\rommanager\gui.py`
 
 **Current Architecture:**
 - tkinter-based desktop GUI
 - 3-tab interface (Identified, Unidentified, Missing)
-- Menu bar (File, DATs, Export, Downloads)
+- Menu bar (File, DATs, Export, Help, Language)
 - Toolbar with scattered buttons
 - Tree views with multiple columns
 
@@ -151,7 +151,6 @@ Add standard Windows shortcuts (F5, Ctrl+A, Delete, Ctrl+D, etc.)
 - Ctrl+Shift+A: Deselect all
 - Ctrl+C: Copy selected
 - Delete: Delete selected
-- Ctrl+D: Download (Missing tab)
 - Ctrl+O: Organize
 - Selection count visible ("3 items selected")
 
@@ -437,7 +436,7 @@ When implementing these patterns:
 
 ## Summary
 
-This documentation package provides everything needed to modernize ROM Manager's UI:
+This documentation package provides everything needed to modernize R0MM's UI:
 
 - **Theory & Rationale:** WINDOWS_EXPLORER_UX_PATTERNS.md
 - **Quick Reference:** WINDOWS_EXPLORER_PATTERNS_QUICK_REFERENCE.md
@@ -455,6 +454,6 @@ This documentation package provides everything needed to modernize ROM Manager's
 Created: 2026-02-16
 Status: Ready for Implementation
 Compatibility: Python 3.8+, tkinter (any version)
-Tested Against: ROM Manager v2 (gui.py)
+Tested Against: R0MM v2 (gui.py)
 
 Last Updated: 2026-02-16

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-ROM Collection Manager
+R0MM
 A tool for organizing ROM collections using DAT files.
 
 Usage:
-    Flet GUI: python main.py           (default)
+    Launcher: python main.py           (default)
     Flet GUI: python main.py --flet
     Tkinter:  python main.py --gui
     Web Mode: python main.py --web
@@ -20,12 +20,16 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rommanager import __version__
+from rommanager.monitor import setup_runtime_monitor, monitor_action
 
 
 def main():
     """Main entry point"""
+    logger = setup_runtime_monitor()
+    monitor_action("startup: main.py entry", logger=logger)
     # Check for --web flag
     if '--web' in sys.argv:
+        monitor_action('mode selected: web', logger=logger)
         # Get optional host and port
         host = '127.0.0.1'
         port = 5000
@@ -48,6 +52,7 @@ def main():
 
     # Check for --gui flag (legacy tkinter)
     if '--gui' in sys.argv:
+        monitor_action('mode selected: tkinter', logger=logger)
         from rommanager.gui import run_gui, GUI_AVAILABLE
         if GUI_AVAILABLE:
             sys.exit(run_gui())
@@ -56,8 +61,9 @@ def main():
             sys.exit(1)
         return
 
-    # Check for --flet flag or default (no args)
-    if '--flet' in sys.argv or len(sys.argv) == 1:
+    # Check for --flet flag
+    if '--flet' in sys.argv:
+        monitor_action('mode selected: flet', logger=logger)
         try:
             from rommanager.gui_flet import run_flet_gui
             sys.exit(run_flet_gui())
@@ -65,21 +71,20 @@ def main():
             print(f"Error: Flet is required for the desktop interface")
             print("Install it with: pip install flet")
             print(f"\nDetails: {e}")
-            # Fallback to tkinter
-            try:
-                from rommanager.gui import run_gui, GUI_AVAILABLE
-                if GUI_AVAILABLE:
-                    print("\nFalling back to tkinter GUI...")
-                    sys.exit(run_gui())
-            except ImportError:
-                pass
-            print("\nAlternatives:")
-            print("  Web mode: python main.py --web")
-            print("  CLI mode: python main.py --dat <file> --roms <folder> --output <folder>")
             sys.exit(1)
         return
 
+    if len(sys.argv) == 1:
+        monitor_action('mode selected: launcher', logger=logger)
+        try:
+            from rommanager.launcher import run_launcher
+            run_launcher()
+            return
+        except Exception as e:
+            print(f"Warning: launcher failed ({e}). Falling back to CLI help.")
+
     if len(sys.argv) > 1 and sys.argv[1] not in ('-h', '--help'):
+        monitor_action('mode selected: cli', logger=logger)
         # CLI mode
         from rommanager.cli import run_cli
         sys.exit(run_cli())
