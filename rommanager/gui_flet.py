@@ -20,6 +20,7 @@ from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
 from . import i18n as _i18n
+from .settings import load_settings, apply_runtime_settings
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -1336,6 +1337,7 @@ GUI_FLET_AVAILABLE = True
 
 
 def run_flet_gui():
+    apply_runtime_settings(load_settings())
     """Launch the Flet desktop GUI."""
     ft.run(main)
     return 0

@@ -16,6 +16,7 @@ from flask import Flask, jsonify, request, render_template_string
 from werkzeug.utils import secure_filename
 
 from .monitor import setup_runtime_monitor, monitor_action
+from .settings import load_settings, save_settings, apply_runtime_settings
 from .models import ROMInfo, ScannedFile, DATInfo, Collection
 from .parser import DATParser
 from .scanner import FileScanner
@@ -54,6 +55,7 @@ state = {
     'scan_total': 0,
     'blindmatch_mode': False,
     'blindmatch_system': '',
+    'settings': load_settings(),
 }
 
 
@@ -1779,6 +1781,7 @@ HTML_TEMPLATE = r'''
 
 def run_server(host='127.0.0.1', port=5000, debug=False):
     """Run the web server"""
+    apply_runtime_settings(load_settings())
     logger = setup_runtime_monitor()
     monitor_action(f"run_server called: host={host} port={port} debug={debug}", logger=logger)
     print(f"R0MM v2 - Web Interface")

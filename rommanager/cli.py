@@ -15,6 +15,9 @@ from .reporter import MissingROMReporter
 from .utils import format_size
 from .monitor import setup_runtime_monitor, monitor_action
 from .blindmatch import build_blindmatch_rom
+from .settings import load_settings, get_effective_profile, apply_runtime_settings
+from .health import run_health_checks
+from .metadata import MetadataStore
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -68,7 +71,7 @@ Examples:
         type=str,
         default='flat',
         help='Organization strategy. Options: system, 1g1r, region, alphabetical, '
-             'emulationstation, flat. Use + for composites (e.g. system+region). Default: flat'
+             'emulationstation, flat, museum. Use + for composites (e.g. system+region). Default: flat'
     )
 
     cli_group.add_argument(
@@ -142,6 +145,30 @@ Examples:
         help='Enable blindmatch mode (no DAT required) with provided system name'
     )
 
+
+    parser.add_argument(
+        '--settings-file',
+        type=str,
+        help='Path to settings JSON file'
+    )
+
+    parser.add_argument(
+        '--profile',
+        type=str,
+        help='Collection profile name from settings presets'
+    )
+
+    parser.add_argument(
+        '--health-check',
+        action='store_true',
+        help='Run collection health checks during scan'
+    )
+
+    parser.add_argument(
+        '--metadata-db',
+        type=str,
+        help='Optional curated metadata JSON database path'
+    )
     parser.add_argument(
         '--version', '-v',
         action='version',
@@ -158,6 +185,9 @@ def run_cli(args=None):
     parser = create_parser()
     args = parser.parse_args(args)
 
+    settings = load_settings(args.settings_file) if args.settings_file else load_settings()
+    profile = apply_runtime_settings(settings, args.profile)
+
     # Handle load-collection mode
     if args.load_collection:
         return _load_collection_mode(args)
@@ -173,6 +203,9 @@ def run_cli(args=None):
             parser.print_help()
             print("\nError: --output is required for organizing (or use --report).")
             return 1
+
+    if args.strategy == "flat" and profile.get("strategy"):
+        args.strategy = profile.get("strategy")
 
     quiet = args.quiet
 
@@ -233,6 +266,17 @@ def run_cli(args=None):
 
     log(f"   Found {len(scanned_files):,} files")
 
+    if args.health_check:
+        hc = run_health_checks(scanned_files,
+                               warn_on_unknown_ext=settings.get("health", {}).get("warn_on_unknown_ext", True),
+                               warn_on_duplicates=settings.get("health", {}).get("warn_on_duplicates", True))
+        if hc:
+            log("\nHealth check warnings:")
+            for k, vals in hc.items():
+                log(f"   {k}: {len(vals)}")
+        else:
+            log("\nHealth check: no issues detected")
+
     # Match files
     if args.blindmatch_system:
         identified = []
@@ -242,6 +286,14 @@ def run_cli(args=None):
         unidentified = []
     else:
         identified, unidentified = multi_matcher.match_all(scanned_files)
+
+    if args.metadata_db:
+        md = MetadataStore(args.metadata_db)
+        for sc in identified:
+            if sc.matched_rom:
+                meta = md.lookup(sc.matched_rom.crc32, sc.matched_rom.game_name)
+                if meta:
+                    sc.matched_rom.status = f"{sc.matched_rom.status} | curated"
 
     total = len(identified) + len(unidentified)
     percent = (len(identified) / total * 100) if total > 0 else 0

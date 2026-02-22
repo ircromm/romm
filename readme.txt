@@ -340,3 +340,23 @@ Available in:
 - Web UI: BlindMatch system field in scan section
 - Tkinter UI: BlindMatch toggle + system input
 - Flet UI: BlindMatch toggle + system input
+
+## 15. Advanced Settings foundation
+
+R0MM now includes a shared settings foundation (`~/.rommanager/settings.json`) used by CLI, Tkinter, Flet and Web runtime initialization.
+
+Implemented foundations:
+- Collection profiles by objective: historical_preservation, mister_playset, retroarch_frontend, full_set_no_hacks.
+- Region/variant policy (global + per-system priority).
+- Naming template engine for organized output (`{name}`, `{game}`, `{region}`, `{system}`, `{crc}`).
+- Optional curated metadata database support (CLI: `--metadata-db`).
+- Audit trail logging for organization actions (`~/.rommanager/logs/audit.log`).
+- Collection health checks (duplicates, unknown extension, missing/zero files) via CLI `--health-check`.
+- Museum organization strategy (`museum`) for generation/system/region hierarchy.
+- Accessibility settings placeholders (font scale, high contrast, dense tables, reduced motion).
+
+CLI additions:
+- `--settings-file <path>`
+- `--profile <preset_name>`
+- `--health-check`
+- `--metadata-db <path>`

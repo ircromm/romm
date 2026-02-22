@@ -9,6 +9,7 @@ from .web import run_server
 from .gui import run_gui, GUI_AVAILABLE
 from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor
 from . import i18n as _i18n
+from .settings import load_settings, apply_runtime_settings
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -83,6 +84,7 @@ def _change_language_launcher(root, lang):
 
 
 def run_launcher():
+    apply_runtime_settings(load_settings())
     """Run the selection launcher"""
     setup_runtime_monitor()
     if not GUI_AVAILABLE:

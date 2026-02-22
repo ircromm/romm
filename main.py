@@ -21,12 +21,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rommanager import __version__
 from rommanager.monitor import setup_runtime_monitor, monitor_action
+from rommanager.settings import load_settings, apply_runtime_settings
 
 
 def main():
     """Main entry point"""
     logger = setup_runtime_monitor()
     monitor_action("startup: main.py entry", logger=logger)
+    apply_runtime_settings(load_settings())
     # Check for --web flag
     if '--web' in sys.argv:
         monitor_action('mode selected: web', logger=logger)

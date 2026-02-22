@@ -31,6 +31,7 @@ from .reporter import MissingROMReporter
 from .utils import format_size
 from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor, start_monitored_thread
 from . import i18n as _i18n
+from .settings import load_settings, apply_runtime_settings
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -91,6 +92,7 @@ class ROMManagerGUI:
     """Main GUI application"""
 
     def __init__(self):
+        apply_runtime_settings(load_settings())
         if not GUI_AVAILABLE:
             raise RuntimeError("tkinter is not available")
 
