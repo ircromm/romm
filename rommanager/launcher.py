@@ -49,6 +49,21 @@ def open_flet_mode(root):
         print(f"Details: {exc}")
         sys.exit(1)
 
+
+
+def open_pyside6_mode(root):
+    """Start the PySide6 desktop app."""
+    monitor_action("launcher click: pyside6")
+    root.destroy()
+    try:
+        from .gui_pyside6 import run_pyside6_gui
+        run_pyside6_gui()
+    except ImportError as exc:
+        print("PySide6 interface unavailable")
+        print("Install with: pip install PySide6")
+        print(f"Details: {exc}")
+        sys.exit(1)
+
 def open_web_mode(root):
     """Start web server and open browser"""
     monitor_action("launcher click: webapp")
@@ -96,15 +111,15 @@ def run_launcher():
     install_tk_exception_bridge(root)
     root.title(_tr("title_launcher"))
     monitor_action("launcher opened")
-    root.geometry("460x340")
+    root.geometry("460x390")
     root.resizable(False, False)
     
     # Center window
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     x = (screen_width - 460) // 2
-    y = (screen_height - 340) // 2
-    root.geometry(f"460x340+{x}+{y}")
+    y = (screen_height - 390) // 2
+    root.geometry(f"460x390+{x}+{y}")
     
     lang_var = tk.StringVar(value=_safe_get_language())
 
@@ -137,6 +152,9 @@ def run_launcher():
     
     ttk.Button(btn_frame, text=_tr("launcher_flet"),
               command=lambda: open_flet_mode(root)).pack(fill=tk.X, pady=5)
+
+    ttk.Button(btn_frame, text="PySide6 Desktop (new)",
+              command=lambda: open_pyside6_mode(root)).pack(fill=tk.X, pady=5)
 
     ttk.Button(btn_frame, text=_tr("launcher_tk"),
               command=lambda: open_desktop_mode(root)).pack(fill=tk.X, pady=5)
