@@ -943,6 +943,7 @@ class ToolsLogsView(ft.Column):
 
         self.strategy_dropdown = ft.Dropdown(
             label=_tr("strategy"),
+            tooltip=_tr("tip_choose_strategy"),
             options=[ft.dropdown.Option(key=s["id"], text=s["name"]) for s in STRATEGIES],
             value="flat",
             border_radius=8,
@@ -957,6 +958,7 @@ class ToolsLogsView(ft.Column):
 
         self.action_dropdown = ft.Dropdown(
             label=_tr("action"),
+            tooltip=_tr("tip_choose_action"),
             options=[
                 ft.dropdown.Option(key="copy", text=_tr("copy_action")),
                 ft.dropdown.Option(key="move", text=_tr("move_action")),
@@ -1011,6 +1013,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._on_browse_output_click,
+                                    tooltip=_tr("tip_select_output_folder"),
                                 ),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
