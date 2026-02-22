@@ -71,7 +71,7 @@ Windows Explorer has been refined over 30+ years to optimize file management wor
 **Current Architecture:**
 - tkinter-based desktop GUI
 - 3-tab interface (Identified, Unidentified, Missing)
-- Menu bar (File, DATs, Export, Downloads)
+- Menu bar (File, DATs, Export, Help)
 - Toolbar with scattered buttons
 - Tree views with multiple columns
 
@@ -151,7 +151,6 @@ Add standard Windows shortcuts (F5, Ctrl+A, Delete, Ctrl+D, etc.)
 - Ctrl+Shift+A: Deselect all
 - Ctrl+C: Copy selected
 - Delete: Delete selected
-- Ctrl+D: Download (Missing tab)
 - Ctrl+O: Organize
 - Selection count visible ("3 items selected")
 

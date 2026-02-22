@@ -1,6 +1,4 @@
-"""
-Launcher interface to choose between Web and Desktop UI
-"""
+"""Launcher window to choose which interface to run."""
 import tkinter as tk
 from tkinter import ttk
 import sys
@@ -9,9 +7,25 @@ import threading
 
 from .web import run_server
 from .gui import run_gui, GUI_AVAILABLE
+from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor
+
+
+def open_flet_mode(root):
+    """Start the Flet desktop app."""
+    monitor_action("launcher click: flet")
+    root.destroy()
+    try:
+        from .gui_flet import run_flet_gui
+        run_flet_gui()
+    except ImportError as exc:
+        print("Error: Flet interface is not available.")
+        print("Install it with: pip install flet")
+        print(f"Details: {exc}")
+        sys.exit(1)
 
 def open_web_mode(root):
     """Start web server and open browser"""
+    monitor_action("launcher click: webapp")
     root.destroy()
     print("Starting Web Interface...")
     # Open browser after a slight delay to ensure server is running
@@ -20,6 +34,7 @@ def open_web_mode(root):
 
 def open_desktop_mode(root):
     """Start desktop GUI"""
+    monitor_action("launcher click: tkinter")
     root.destroy()
     if GUI_AVAILABLE:
         run_gui()
@@ -27,24 +42,36 @@ def open_desktop_mode(root):
         print("Error: Desktop GUI (tkinter) is not available.")
         sys.exit(1)
 
+
+def open_cli_mode(root):
+    """Show CLI usage/help in the current terminal."""
+    monitor_action("launcher click: cli")
+    root.destroy()
+    print("Starting CLI mode...")
+    from .cli import run_cli
+    run_cli(['--help'])
+
 def run_launcher():
     """Run the selection launcher"""
+    setup_runtime_monitor()
     if not GUI_AVAILABLE:
         print("Tkinter not available. Starting Web Interface automatically...")
         run_server()
         return
 
     root = tk.Tk()
+    install_tk_exception_bridge(root)
     root.title("ROM Manager")
-    root.geometry("400x250")
+    monitor_action("launcher opened")
+    root.geometry("460x340")
     root.resizable(False, False)
     
     # Center window
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    x = (screen_width - 400) // 2
-    y = (screen_height - 250) // 2
-    root.geometry(f"400x250+{x}+{y}")
+    x = (screen_width - 460) // 2
+    y = (screen_height - 340) // 2
+    root.geometry(f"460x340+{x}+{y}")
     
     # Styles
     style = ttk.Style()
@@ -57,18 +84,24 @@ def run_launcher():
     
     ttk.Label(frame, text="ROM Collection Manager", 
              style='Header.TLabel').pack(pady=(10, 5))
-    ttk.Label(frame, text="Choose your interface:", 
+    ttk.Label(frame, text="Choose your interface:",
              font=('Segoe UI', 10)).pack(pady=(0, 20))
     
     # Buttons
     btn_frame = ttk.Frame(frame)
     btn_frame.pack(fill=tk.BOTH, expand=True)
     
-    ttk.Button(btn_frame, text="🖥️ Desktop App\n(Simples, Nativo)", 
+    ttk.Button(btn_frame, text="✨ Flet Desktop\n(Moderno e responsivo)",
+              command=lambda: open_flet_mode(root)).pack(fill=tk.X, pady=5)
+
+    ttk.Button(btn_frame, text="🖥️ Tkinter Desktop\n(Simples, nativo)",
               command=lambda: open_desktop_mode(root)).pack(fill=tk.X, pady=5)
-              
-    ttk.Button(btn_frame, text="🌐 Web Interface\n(Moderno, Via Browser)", 
+
+    ttk.Button(btn_frame, text="🌐 WebApp\n(Acesso pelo navegador)",
               command=lambda: open_web_mode(root)).pack(fill=tk.X, pady=5)
+
+    ttk.Button(btn_frame, text="⌨️ CLI\n(Linha de comando no terminal)",
+              command=lambda: open_cli_mode(root)).pack(fill=tk.X, pady=5)
     
     ttk.Label(frame, text="v1.0.0", font=('Segoe UI', 8), 
              foreground='gray').pack(side=tk.BOTTOM)
