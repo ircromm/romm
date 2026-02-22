@@ -360,3 +360,18 @@ CLI additions:
 - `--profile <preset_name>`
 - `--health-check`
 - `--metadata-db <path>`
+
+## 16. Flet Stability Protocol (Mandatory)
+
+When changing Flet desktop UI (`rommanager/gui_flet.py`), follow the protocol in:
+
+- `docs/FLET_AGENT_PROTOCOL.md`
+
+This is mandatory to prevent regressions like:
+
+- `'Page' object has no attribute 'open'`
+
+Minimum rule set:
+- Treat Flet API usage as version-sensitive.
+- Do not ship dialog/overlay changes without compatibility fallback.
+- Document compatibility risk and manual validation steps in each PR.
