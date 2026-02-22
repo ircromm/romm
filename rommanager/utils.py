@@ -1,5 +1,5 @@
 """
-Utility functions for ROM Manager
+Utility functions for R0MM
 """
 
 

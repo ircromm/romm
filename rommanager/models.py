@@ -1,5 +1,5 @@
 """
-Data models for ROM Manager
+Data models for R0MM
 """
 
 from dataclasses import dataclass, field
