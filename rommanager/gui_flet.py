@@ -385,7 +385,7 @@ class DashboardView(ft.Column):
             (tr("flet_dat_files"), str(len(dats)), ft.Icons.DESCRIPTION_OUTLINED, MOCHA["blue"]),
             (tr("tab_identified"), str(id_count), ft.Icons.CHECK_CIRCLE_OUTLINE, MOCHA["green"]),
             (tr("tab_unidentified"), str(un_count), ft.Icons.HELP_OUTLINE, MOCHA["peach"]),
-            (tr("flet_total"), str(total), ft.Icons.STORAGE_OUTLINED, MOCHA["lavender"]),
+            ("Total", str(total), ft.Icons.STORAGE_OUTLINED, MOCHA["lavender"]),
         ]
 
         stat_cards = []
@@ -418,7 +418,7 @@ class DashboardView(ft.Column):
 
         if dats:
             self.controls.append(
-                ft.Text(tr("flet_collection_completeness"), size=18, weight=ft.FontWeight.W_600, color=MOCHA["text"])
+                ft.Text("Collection Completeness" if get_language()==LANG_EN else "Completude da Coleção", size=18, weight=ft.FontWeight.W_600, color=MOCHA["text"])
             )
             completeness = self.state.multi_matcher.get_completeness_by_dat(self.state.identified)
             for dat_id, comp in completeness.items():

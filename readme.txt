@@ -307,19 +307,3 @@ The app now focuses on:
 - ROM scanning and matching
 - Organization and reporting
 
-
-## 13. Language Selection
-
-The app now includes a language selector in desktop menus:
-- **English** (default)
-- **Português Brasileiro**
-
-Where to change:
-- Launcher window: `Language` menu
-- Tkinter desktop app: `Language` menu
-- Flet desktop app: language dropdown in the left navigation panel
-
-Default language at startup is **English**.
-
-Module entry behavior:
-- `python -m rommanager` always opens the visual mode selector (launcher).
