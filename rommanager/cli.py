@@ -1,5 +1,5 @@
 """
-Command-line interface for ROM Manager
+Command-line interface for R0MM
 """
 
 import argparse
@@ -13,13 +13,14 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
+from .monitor import setup_runtime_monitor, monitor_action
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser"""
     parser = argparse.ArgumentParser(
         prog='rommanager',
-        description='ROM Collection Manager - Organize your ROMs using DAT files',
+        description='R0MM - Organize your ROMs using DAT files',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Modes:
@@ -88,14 +89,6 @@ Examples:
         action='store_true',
         help='Do not scan subdirectories'
     )
-
-    cli_group.add_argument(
-        '--download-delay', '-dd',
-        type=int,
-        default=5,
-        help='Seconds to wait between downloads (0-60, default: 5)'
-    )
-
     cli_group.add_argument(
         '--quiet', '-q',
         action='store_true',
@@ -152,6 +145,8 @@ Examples:
 
 def run_cli(args=None):
     """Run the CLI"""
+    logger = setup_runtime_monitor()
+    monitor_action("run_cli called", logger=logger)
     parser = create_parser()
     args = parser.parse_args(args)
 
@@ -177,7 +172,7 @@ def run_cli(args=None):
         if not quiet:
             print(msg)
 
-    log("ROM Collection Manager")
+    log("R0MM")
     log("=" * 50)
 
     # Load DAT(s)
