@@ -31,17 +31,8 @@ from .shared_config import (
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
 )
 
-try:
-    from .downloader import ArchiveOrgDownloader
-    DOWNLOADER_AVAILABLE = True
-except Exception:
-    DOWNLOADER_AVAILABLE = False
-
-try:
-    from .myrient_downloader import MyrientDownloader, DownloadProgress, DownloadStatus
-    MYRIENT_AVAILABLE = True
-except Exception:
-    MYRIENT_AVAILABLE = False
+DOWNLOADER_AVAILABLE = False
+MYRIENT_AVAILABLE = False
 
 # Flask app
 app = Flask(__name__)
@@ -562,250 +553,57 @@ def dat_sources_libretro():
     return jsonify({'dats': mgr.list_libretro_dats()})
 
 
-# ── Archive.org Search ─────────────────────────────────────────
+
+# ── Direct download endpoints removed ──────────────────────────
 
 @app.route('/api/archive-search', methods=['POST'])
 def archive_search():
-    if not DOWNLOADER_AVAILABLE:
-        return jsonify({'error': 'requests library not installed'}), 400
-
-    data = request.get_json()
-    rom_name = data.get('rom_name', '')
-    system = data.get('system', '')
-
-    try:
-        dl = ArchiveOrgDownloader()
-        results = dl.search(rom_name, system, max_results=10)
-        return jsonify({'results': results})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
+    return jsonify({'error': 'Direct download/search features were removed from the app'}), 410
 
 
 @app.route('/api/archive-item-files', methods=['POST'])
 def archive_item_files():
-    if not DOWNLOADER_AVAILABLE:
-        return jsonify({'error': 'requests library not installed'}), 400
-
-    data = request.get_json()
-    identifier = data.get('identifier', '')
-
-    try:
-        dl = ArchiveOrgDownloader()
-        files = dl.get_item_files(identifier)
-        return jsonify({'files': files})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-
-# ── Myrient Download ───────────────────────────────────────────
-
-# Download state (per-session, simple)
-dl_state = {
-    'active': False,
-    'progress': None,     # DownloadProgress
-    'downloader': None,   # MyrientDownloader
-    'log': [],
-}
+    return jsonify({'error': 'Direct download/search features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/systems')
 def myrient_systems():
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    systems = MyrientDownloader.get_systems()
-    return jsonify({'systems': systems})
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/files', methods=['POST'])
 def myrient_files():
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    data = request.get_json()
-    system_name = data.get('system_name', '')
-    url = data.get('url', '')
-    query = data.get('query', '')
-
-    try:
-        dl = MyrientDownloader()
-        if query:
-            files = dl.search_files(system_name, query, url)
-        else:
-            files = dl.list_files(system_name, url)
-        return jsonify({
-            'files': [{'name': f.name, 'url': f.url, 'size_text': f.size_text} for f in files],
-            'count': len(files),
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/download-missing', methods=['POST'])
 def myrient_download_missing():
-    """Start downloading missing ROMs in background."""
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    if dl_state['active']:
-        return jsonify({'error': 'Download already in progress'}), 400
-
-    data = request.get_json()
-    dest_folder = data.get('dest_folder', '')
-    selected_names = data.get('selected_names', [])  # empty = all missing
-    download_delay = max(0, min(60, int(data.get('download_delay', 5))))
-
-    if not dest_folder or not os.path.isdir(dest_folder):
-        return jsonify({'error': 'Invalid destination folder'}), 400
-
-    mm = state['multi_matcher']
-    if not mm.matchers:
-        return jsonify({'error': 'Load DATs and scan first'}), 400
-
-    all_missing = mm.get_missing(state['identified'])
-    if selected_names:
-        name_set = set(selected_names)
-        to_download = [r for r in all_missing if r.name in name_set]
-    else:
-        to_download = all_missing
-
-    if not to_download:
-        return jsonify({'error': 'No missing ROMs to download'}), 400
-
-    dl_state['log'] = []
-    dl_state['active'] = True
-    dl_state['progress'] = None
-
-    def worker():
-        try:
-            dl = MyrientDownloader()
-            dl_state['downloader'] = dl
-            dl_state['log'].append(f"Resolving URLs for {len(to_download)} ROMs...")
-
-            def resolve_cb(name, cur, tot):
-                dl_state['log'].append(f"Resolve {cur}/{tot}: {name}")
-
-            queued = dl.queue_missing_roms(to_download, dest_folder, resolve_cb)
-            dl_state['log'].append(f"Found {queued}/{len(to_download)} ROMs on Myrient")
-
-            if queued == 0:
-                dl_state['log'].append("No ROMs found on Myrient")
-                return
-
-            def on_progress(prog):
-                dl_state['progress'] = {
-                    'current_index': prog.current_index,
-                    'total_count': prog.total_count,
-                    'completed': prog.completed,
-                    'failed': prog.failed,
-                    'cancelled': prog.cancelled,
-                    'current_rom': prog.current_task.rom_name if prog.current_task else '',
-                    'current_bytes': prog.current_task.downloaded_bytes if prog.current_task else 0,
-                    'current_total': prog.current_task.total_bytes if prog.current_task else 0,
-                    'current_status': prog.current_task.status.name if prog.current_task else '',
-                }
-
-            result = dl.start_downloads(on_progress, download_delay=download_delay)
-            dl_state['log'].append(
-                f"DONE: {result.completed} downloaded, {result.failed} failed, {result.cancelled} cancelled")
-        except Exception as e:
-            dl_state['log'].append(f"ERROR: {e}")
-        finally:
-            dl_state['active'] = False
-            dl_state['downloader'] = None
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-
-    return jsonify({'success': True, 'queuing': len(to_download)})
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/download-files', methods=['POST'])
 def myrient_download_files():
-    """Download specific files from Myrient browser (by URL)."""
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    if dl_state['active']:
-        return jsonify({'error': 'Download already in progress'}), 400
-
-    data = request.get_json()
-    dest_folder = data.get('dest_folder', '')
-    files = data.get('files', [])  # [{name, url}]
-    download_delay = max(0, min(60, int(data.get('download_delay', 5))))
-
-    if not dest_folder or not os.path.isdir(dest_folder):
-        return jsonify({'error': 'Invalid destination folder'}), 400
-    if not files:
-        return jsonify({'error': 'No files specified'}), 400
-
-    dl_state['log'] = []
-    dl_state['active'] = True
-    dl_state['progress'] = None
-
-    def worker():
-        try:
-            dl = MyrientDownloader()
-            dl_state['downloader'] = dl
-
-            for f in files:
-                dl.queue_rom(rom_name=f['name'], url=f['url'], dest_folder=dest_folder)
-
-            def on_progress(prog):
-                dl_state['progress'] = {
-                    'current_index': prog.current_index,
-                    'total_count': prog.total_count,
-                    'completed': prog.completed,
-                    'failed': prog.failed,
-                    'cancelled': prog.cancelled,
-                    'current_rom': prog.current_task.rom_name if prog.current_task else '',
-                    'current_bytes': prog.current_task.downloaded_bytes if prog.current_task else 0,
-                    'current_total': prog.current_task.total_bytes if prog.current_task else 0,
-                    'current_status': prog.current_task.status.name if prog.current_task else '',
-                }
-
-            result = dl.start_downloads(on_progress, download_delay=download_delay)
-            dl_state['log'].append(
-                f"DONE: {result.completed} downloaded, {result.failed} failed")
-        except Exception as e:
-            dl_state['log'].append(f"ERROR: {e}")
-        finally:
-            dl_state['active'] = False
-            dl_state['downloader'] = None
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-
-    return jsonify({'success': True, 'queuing': len(files)})
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/progress')
 def myrient_progress():
-    return jsonify({
-        'active': dl_state['active'],
-        'progress': dl_state['progress'],
-        'log': dl_state['log'][-20:],  # last 20 entries
-    })
+    return jsonify({'active': False, 'progress': None, 'log': []})
 
 
 @app.route('/api/myrient/cancel', methods=['POST'])
 def myrient_cancel():
-    if dl_state['downloader']:
-        dl_state['downloader'].cancel()
-        return jsonify({'success': True})
-    return jsonify({'error': 'No active download'}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/pause', methods=['POST'])
 def myrient_pause():
-    if dl_state['downloader']:
-        dl_state['downloader'].pause()
-        return jsonify({'success': True})
-    return jsonify({'error': 'No active download'}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/resume', methods=['POST'])
 def myrient_resume():
-    if dl_state['downloader']:
-        dl_state['downloader'].resume()
-        return jsonify({'success': True})
-    return jsonify({'error': 'No active download'}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 # ── Export Reports ─────────────────────────────────────────────
@@ -1233,11 +1031,7 @@ HTML_TEMPLATE = r'''
 
             /* ── Myrient Browser ──────── */
             const openMyrientBrowser = async () => {
-                const res = await api.get('/api/myrient/systems');
-                setMyrientSystems(res.systems || []);
-                setMyrientFiles([]);
-                setMyrientSelectedSys('');
-                setShowMyrient(true);
+                notify('warning', 'Direct download was removed from the app');
             };
 
             const loadMyrientFiles = async (sysName) => {
@@ -1292,9 +1086,9 @@ HTML_TEMPLATE = r'''
                 }, 500);
             };
 
-            const cancelDl = async () => { await api.post('/api/myrient/cancel'); };
-            const pauseDl = async () => { await api.post('/api/myrient/pause'); };
-            const resumeDl = async () => { await api.post('/api/myrient/resume'); };
+            const cancelDl = async () => { notify('warning', 'Direct download was removed from the app'); };
+            const pauseDl = async () => { notify('warning', 'Direct download was removed from the app'); };
+            const resumeDl = async () => { notify('warning', 'Direct download was removed from the app'); };
 
             /* ── Filtering ──────── */
             const q = debouncedQuery.toLowerCase();
@@ -1556,7 +1350,7 @@ HTML_TEMPLATE = r'''
                                     {!dlActive ? (
                                         <>
                                             <button onClick={() => setShowDownloadDialog(false)} className="px-4 py-2 bg-slate-700 rounded-lg text-sm">Close</button>
-                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download All Missing</button>
+                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download All Missing (removed)</button>
                                         </>
                                     ) : (
                                         <>
@@ -1583,7 +1377,7 @@ HTML_TEMPLATE = r'''
                             <div className="flex gap-2">
                                 <button onClick={openCollections} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Collections</button>
                                 <button onClick={openDatLibrary} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">DAT Library</button>
-                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Myrient Browser</button>
+                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Myrient Browser (removed)</button>
                             </div>
                         </div>
 
@@ -1708,7 +1502,7 @@ HTML_TEMPLATE = r'''
                                         <button onClick={() => setShowArchive(true)}
                                             className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">Search Archive.org</button>
                                         <button onClick={() => { setDlDest(romFolder || ''); setShowDownloadDialog(true); }}
-                                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download Missing</button>
+                                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download Missing (removed)</button>
                                     </div>
                                 )}
                             </div>

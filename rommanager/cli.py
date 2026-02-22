@@ -89,14 +89,6 @@ Examples:
         action='store_true',
         help='Do not scan subdirectories'
     )
-
-    cli_group.add_argument(
-        '--download-delay', '-dd',
-        type=int,
-        default=5,
-        help='Seconds to wait between downloads (0-60, default: 5)'
-    )
-
     cli_group.add_argument(
         '--quiet', '-q',
         action='store_true',

@@ -35,12 +35,6 @@ from .shared_config import (
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
 )
 
-try:
-    from .myrient_downloader import MyrientDownloader, DownloadProgress, DownloadStatus
-    MYRIENT_AVAILABLE = True
-except Exception:
-    MYRIENT_AVAILABLE = False
-
 
 class ROMManagerGUI:
     """Main GUI application"""
@@ -131,12 +125,10 @@ class ROMManagerGUI:
         export_menu.add_command(label="Export Missing (JSON)...", command=lambda: self._export_missing('json'))
         menubar.add_cascade(label="Export", menu=export_menu)
 
-        dl_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        dl_menu.add_command(label="Myrient Browser...", command=self._show_myrient_browser)
-        dl_menu.add_separator()
-        dl_menu.add_command(label="Settings", command=self._show_settings)
-        dl_menu.add_command(label="About", command=self._show_about)
-        menubar.add_cascade(label="Downloads", menu=dl_menu)
+        help_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
+        help_menu.add_command(label="Settings", command=self._show_settings)
+        help_menu.add_command(label="About", command=self._show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
 
         self.root.config(menu=menubar)
 
@@ -241,8 +233,6 @@ class ROMManagerGUI:
         # Right side: Download actions with dropdown
         ms_right = ttk.Frame(ms_toolbar)
         ms_right.pack(side=tk.RIGHT)
-        ttk.Button(ms_right, text="Download Selected", command=self._download_selected_missing).pack(side=tk.LEFT)
-        ttk.Button(ms_right, text="Download All Missing", command=self._download_missing_dialog).pack(side=tk.LEFT, padx=(5, 0))
 
         # Selection count label
         self.ms_selection_var = tk.StringVar(value="")
@@ -293,7 +283,6 @@ class ROMManagerGUI:
         # Keyboard shortcuts
         self.root.bind('<Control-a>', self._on_select_all)
         self.root.bind('<Control-c>', self._on_copy)
-        self.root.bind('<Control-d>', self._on_download)
         self.root.bind('<F5>', self._on_refresh)
         self.root.bind('<Delete>', self._on_delete_key)
         self.root.bind('<Escape>', self._on_escape)
@@ -389,7 +378,6 @@ class ROMManagerGUI:
         menu.add_command(label="Copy", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
         menu.add_command(label="Copy CRC32", command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
         menu.add_separator()
-        menu.add_command(label="Download", command=self._download_selected_missing)
         menu.add_separator()
         menu.add_command(label="Search Archive.org", command=lambda: self._search_archive_for_item(tree, item))
         menu.add_command(label="Copy to Clipboard", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
@@ -512,14 +500,6 @@ class ROMManagerGUI:
 
         return 'break'
 
-    def _on_download(self, event=None):
-        """Ctrl+D: Download selected (Missing tab only)"""
-        current_tab = self.notebook.index(self.notebook.select())
-        if current_tab != 2:  # Not Missing tab
-            return 'break'
-
-        self._download_selected_missing()
-        return 'break'
 
     def _on_refresh(self, event=None):
         """F5: Refresh Missing tab"""
