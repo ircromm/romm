@@ -61,6 +61,32 @@ from .shared_config import (
 )
 
 
+
+
+class _TkToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _e=None):
+        if self.tip or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 18
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tk.Label(tw, text=self.text, bg="#111827", fg="#e5e7eb", relief=tk.SOLID, borderwidth=1, padx=6, pady=3).pack()
+
+    def _hide(self, _e=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
 class ROMManagerGUI:
     """Main GUI application"""
 
@@ -94,10 +120,13 @@ class ROMManagerGUI:
             'ms': {'column': None, 'reverse': False},
         }
 
+        self._tooltips = []
+
         # Setup
         self._setup_theme()
         self._build_menu()
         self._build_ui()
+        self._apply_auto_tooltips()
 
     # ── Theme ─────────────────────────────────────────────────────
 
@@ -353,6 +382,17 @@ class ROMManagerGUI:
         # Bind right-click for context menu
         tree.bind('<Button-3>', lambda e: self._show_context_menu(e, tree))
         return tree
+
+    def _apply_auto_tooltips(self, root_widget=None):
+        w = root_widget or self.root
+        for child in w.winfo_children():
+            try:
+                text = child.cget("text") if "text" in child.keys() else ""
+            except Exception:
+                text = ""
+            if text and child.winfo_class() in {"TButton", "Button", "TCheckbutton", "TRadiobutton", "Label"}:
+                self._tooltips.append(_TkToolTip(child, text))
+            self._apply_auto_tooltips(child)
 
     def _setup_region_tags(self, tree):
         for region, colors in REGION_COLORS.items():

@@ -906,6 +906,20 @@ HTML_TEMPLATE = r'''
                 const iv = setInterval(refreshStatus, 2000);
                 return () => clearInterval(iv);
             }, []);
+            // set button titles for hover tooltips
+            useEffect(() => {
+                const applyTips = () => {
+                    document.querySelectorAll('button').forEach((b) => {
+                        if (!b.title || !b.title.trim()) {
+                            const t = (b.innerText || '').trim();
+                            if (t) b.title = t;
+                        }
+                    });
+                };
+                applyTips();
+                const iv = setInterval(applyTips, 2000);
+                return () => clearInterval(iv);
+            }, []);
 
             useEffect(() => {
                 if (!status.scanning && (status.identified_count > 0 || status.unidentified_count > 0)) {
@@ -1296,7 +1310,7 @@ HTML_TEMPLATE = r'''
                                         <div className="flex gap-2 mt-2 items-center">
                                             <input type="text" value={dlDest} onChange={e => setDlDest(e.target.value)}
                                                 placeholder="Download destination folder..." className="flex-1 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs focus:outline-none focus:border-cyan-500" />
-                                            <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs">Browse</button>
+                                            <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs" title="Browse folder">Browse</button>
 
                                             <button onClick={() => {
                                                 const selected = [];
@@ -1325,7 +1339,7 @@ HTML_TEMPLATE = r'''
                                     <div className="flex gap-2 mt-1">
                                         <input type="text" value={dlDest} onChange={e => setDlDest(e.target.value)}
                                             placeholder="C:\path\to\roms" className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500" />
-                                        <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm">Browse</button>
+                                        <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Browse folder">Browse</button>
                                     </div>
                                 </div>
                                 <div>
@@ -1404,7 +1418,7 @@ HTML_TEMPLATE = r'''
                                     <input type="text" value={datPath} onChange={e => setDatPath(e.target.value)}
                                         placeholder="C:\path\to\nointro.dat"
                                         className="flex-1 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                    <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded-l-none rounded-r-lg">Browse</button>
+                                    <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
                                     <button onClick={loadDat} className="ml-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium transition text-sm">Add</button>
                                 </div>
                                 {(status.dats_loaded || []).length > 0 && (
@@ -1431,7 +1445,7 @@ HTML_TEMPLATE = r'''
                                     <input type="text" value={romFolder} onChange={e => setRomFolder(e.target.value)}
                                         placeholder="C:\path\to\roms"
                                         className="flex-1 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-emerald-500 text-sm" />
-                                    <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 bg-emerald-600 hover:bg-emerald-500 rounded-l-none rounded-r-lg">Browse</button>
+                                    <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 bg-emerald-600 hover:bg-emerald-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
                                     <button onClick={startScan} disabled={status.scanning}
                                         className="ml-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg font-medium transition flex items-center gap-2 text-sm">
                                         {status.scanning && <span className="loader"></span>}
@@ -1448,7 +1462,7 @@ HTML_TEMPLATE = r'''
                                         Recursive
                                     </label>
                                     <input type="text" value={blindmatchSystem} onChange={e => setBlindmatchSystem(e.target.value)}
-                                        placeholder="BlindMatch system (optional)"
+                                        placeholder="BlindMatch system (optional)" title="BlindMatch system name"
                                         className="px-3 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-sm min-w-[260px]" />
                                 </div>
                                 {status.scanning && (
@@ -1675,7 +1689,7 @@ HTML_TEMPLATE = r'''
                                         <input type="text" value={outputFolder} onChange={e => setOutputFolder(e.target.value)}
                                             placeholder="C:\path\to\output"
                                             className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm">Browse</button>
+                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Browse folder">Browse</button>
                                     </div>
                                 </div>
                                 <div>

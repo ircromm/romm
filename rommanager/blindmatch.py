@@ -22,6 +22,24 @@ _REGION_PATTERNS = [
 ]
 
 
+_TAG_BLOCK_RE = re.compile(r"\s*[\(\[][^[\]()\[\]]+[\)\]]")
+
+
+def clean_game_name(filename: str) -> str:
+    """Best-effort cleanup of scene-like tags from filename stem."""
+    name = os.path.splitext(filename)[0]
+    # remove common (...) and [...] tag blocks repeatedly
+    prev = None
+    while prev != name:
+        prev = name
+        name = _TAG_BLOCK_RE.sub("", name).strip()
+
+    # normalize separators/spaces
+    name = re.sub(r"[_\.]+", " ", name)
+    name = re.sub(r"\s{2,}", " ", name).strip(" -_	")
+    return name or os.path.splitext(filename)[0]
+
+
 def infer_region(filename: str) -> str:
     name = filename.upper()
     for pat, region in _REGION_PATTERNS:
@@ -31,7 +49,7 @@ def infer_region(filename: str) -> str:
 
 
 def build_blindmatch_rom(scanned: ScannedFile, system_name: str) -> ROMInfo:
-    base = os.path.splitext(scanned.filename)[0]
+    base = clean_game_name(scanned.filename)
     region = infer_region(scanned.filename)
     return ROMInfo(
         name=scanned.filename,

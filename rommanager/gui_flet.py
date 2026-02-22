@@ -644,8 +644,8 @@ class ImportScanView(ft.Column):
         )
 
         self.progress_text = ft.Text("", size=12, color=MOCHA["subtext0"])
-        self.blindmatch_switch = ft.Switch(label="BlindMatch", value=False)
-        self.blindmatch_system_field = ft.TextField(label="System", width=220)
+        self.blindmatch_switch = ft.Switch(label="BlindMatch", value=False, tooltip="BlindMatch")
+        self.blindmatch_system_field = ft.TextField(label="System", width=220, tooltip="BlindMatch system")
         self._selected_folder = ""
 
     def build_content(self):
@@ -679,6 +679,7 @@ class ImportScanView(ft.Column):
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._on_add_dat_click,
+                                    tooltip=_tr("flet_add_dat"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_remove_selected"),
@@ -686,6 +687,7 @@ class ImportScanView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._remove_selected_dat,
+                                    tooltip=_tr("flet_remove_selected"),
                                 ),
                             ],
                             spacing=8,
@@ -717,6 +719,7 @@ class ImportScanView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._on_browse_folder_click,
+                                    tooltip=_tr("flet_browse"),
                                 ),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1021,6 +1024,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._preview_organize,
+                                    tooltip=_tr("flet_preview"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_organize"),
@@ -1028,6 +1032,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["green"],
                                     color=MOCHA["crust"],
                                     on_click=self._execute_organize,
+                                    tooltip=_tr("flet_organize"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_undo_last"),
@@ -1035,6 +1040,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["peach"],
                                     color=MOCHA["crust"],
                                     on_click=self._undo_organize,
+                                    tooltip=_tr("flet_undo_last"),
                                 ),
                             ],
                             spacing=8,
@@ -1065,6 +1071,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._save_collection,
+                                    tooltip=_tr("flet_save"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_load"),
@@ -1072,6 +1079,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._on_load_collection_click,
+                                    tooltip=_tr("flet_load"),
                                 ),
                             ],
                             spacing=8,
