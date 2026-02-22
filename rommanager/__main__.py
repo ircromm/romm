@@ -9,6 +9,11 @@ def main():
     """Main entry point"""
     
     # 1. Check for explicit flags first (before parsing full CLI args)
+    if '--flet' in sys.argv:
+        from .gui_flet import run_flet_gui
+        run_flet_gui()
+        return
+
     if '--web' in sys.argv:
         from .web import run_server
         run_server()
