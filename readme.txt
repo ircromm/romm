@@ -307,15 +307,3 @@ The app now focuses on:
 - ROM scanning and matching
 - Organization and reporting
 
-
-## 13. Language Selection
-
-The app now includes a language selector in desktop menus:
-- **English** (default)
-- **Português Brasileiro**
-
-Where to change:
-- Launcher window: `Language` menu
-- Tkinter desktop app: `Language` menu
-
-Default language at startup is **English**.

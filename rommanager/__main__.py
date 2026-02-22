@@ -13,7 +13,6 @@ def main():
     
     # 1. Check for explicit flags first (before parsing full CLI args)
     if '--flet' in sys.argv:
-        monitor_action('mode selected: flet', logger=logger)
         from .gui_flet import run_flet_gui
         run_flet_gui()
         return

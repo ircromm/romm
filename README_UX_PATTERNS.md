@@ -71,7 +71,7 @@ Windows Explorer has been refined over 30+ years to optimize file management wor
 **Current Architecture:**
 - tkinter-based desktop GUI
 - 3-tab interface (Identified, Unidentified, Missing)
-- Menu bar (File, DATs, Export, Help, Language)
+- Menu bar (File, DATs, Export, Help)
 - Toolbar with scattered buttons
 - Tree views with multiple columns
 
