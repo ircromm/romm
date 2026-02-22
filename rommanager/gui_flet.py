@@ -44,6 +44,7 @@ def _safe_get_language():
         return func()
     return LANG_EN
 from .shared_config import STRATEGIES
+from .blindmatch import build_blindmatch_rom
 
 # ─── Catppuccin Mocha Palette ──────────────────────────────────────────────────
 MOCHA = {
@@ -101,6 +102,8 @@ class AppState:
         self.scanning = False
         self.scan_progress = 0
         self.scan_total = 0
+        self.blindmatch_mode = False
+        self.blindmatch_system = ""
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -641,6 +644,8 @@ class ImportScanView(ft.Column):
         )
 
         self.progress_text = ft.Text("", size=12, color=MOCHA["subtext0"])
+        self.blindmatch_switch = ft.Switch(label="BlindMatch", value=False)
+        self.blindmatch_system_field = ft.TextField(label="System", width=220)
         self._selected_folder = ""
 
     def build_content(self):
@@ -716,7 +721,7 @@ class ImportScanView(ft.Column):
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        ft.Row(controls=[self.recursive_switch, self.archives_switch], spacing=16),
+                        ft.Row(controls=[self.recursive_switch, self.archives_switch, self.blindmatch_switch, self.blindmatch_system_field], spacing=16),
                         ft.Divider(height=1, color=MOCHA["surface1"]),
                         ft.Row(
                             controls=[
@@ -823,6 +828,8 @@ class ImportScanView(ft.Column):
 
     def _update_scan_btn_state(self):
         has_dats = len(self.state.multi_matcher.get_dat_list()) > 0
+        if self.blindmatch_switch.value:
+            has_dats = True
         has_folder = bool(self._selected_folder)
         self.scan_btn.disabled = not (has_dats and has_folder) or self.state.scanning
 
@@ -834,6 +841,8 @@ class ImportScanView(ft.Column):
             return
 
         self.state.scanning = True
+        self.state.blindmatch_mode = bool(self.blindmatch_switch.value)
+        self.state.blindmatch_system = (self.blindmatch_system_field.value or "").strip()
         self.scan_btn.disabled = True
         self.scan_btn.text = "Scanning..."
         self.scan_btn.update()

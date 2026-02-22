@@ -54,6 +54,7 @@ def _safe_get_language():
     if callable(func):
         return func()
     return LANG_EN
+from .blindmatch import build_blindmatch_rom
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
@@ -217,6 +218,10 @@ class ROMManagerGUI:
         ttk.Checkbutton(opts, text=_tr("scan_inside_zips"), variable=self.scan_archives_var).pack(side=tk.LEFT)
         self.recursive_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(opts, text=_tr("recursive"), variable=self.recursive_var).pack(side=tk.LEFT, padx=(15, 0))
+        self.blindmatch_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="BlindMatch", variable=self.blindmatch_var).pack(side=tk.LEFT, padx=(15, 0))
+        self.blindmatch_system_var = tk.StringVar(value="")
+        ttk.Entry(opts, textvariable=self.blindmatch_system_var, width=20).pack(side=tk.LEFT, padx=(6, 0))
         self.progress_var = tk.StringVar(value="")
         ttk.Label(scan_frame, textvariable=self.progress_var).pack(anchor=tk.W)
         self.progress_bar = ttk.Progressbar(scan_frame, mode='determinate')
@@ -708,7 +713,7 @@ class ROMManagerGUI:
         if folder == _tr("no_folder_selected") or not os.path.isdir(folder):
             messagebox.showwarning(_tr("warning"), _tr("warning_select_valid_folder"))
             return
-        if not self.multi_matcher.matchers:
+        if not self.blindmatch_var.get() and not self.multi_matcher.matchers:
             messagebox.showwarning(_tr("warning"), _tr("warning_load_dat_first"))
             return
         self.scanned_files.clear()
@@ -739,7 +744,10 @@ class ROMManagerGUI:
         self.root.after(0, self._scan_done)
 
     def _process(self, sc):
-        m = self.multi_matcher.match(sc)
+        if self.blindmatch_var.get():
+            m = build_blindmatch_rom(sc, self.blindmatch_system_var.get())
+        else:
+            m = self.multi_matcher.match(sc)
         sc.matched_rom = m
         self.scanned_files.append(sc)
         if m:

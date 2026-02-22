@@ -323,3 +323,20 @@ Default language at startup is **English**.
 
 Module entry behavior:
 - `python -m rommanager` always opens the visual mode selector (launcher).
+
+
+## 14. BlindMatch mode
+
+BlindMatch allows scanning without any DAT file.
+
+How it works (best effort):
+- User provides the system name (for example: SNES).
+- The app infers region from filename tokens such as `(U)`, `US`, `(E)`, `(J)`, `BR`, etc.
+- All scanned files are treated as identified in this mode.
+- There are no "missing ROMs" and no "unidentified" results in BlindMatch mode.
+
+Available in:
+- CLI: `--blindmatch-system <SYSTEM>`
+- Web UI: BlindMatch system field in scan section
+- Tkinter UI: BlindMatch toggle + system input
+- Flet UI: BlindMatch toggle + system input

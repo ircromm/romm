@@ -14,6 +14,7 @@ from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
 from .monitor import setup_runtime_monitor, monitor_action
+from .blindmatch import build_blindmatch_rom
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -134,6 +135,13 @@ Examples:
         help='Load a saved collection (.romcol.json) and display its info'
     )
 
+
+    parser.add_argument(
+        '--blindmatch-system',
+        type=str,
+        help='Enable blindmatch mode (no DAT required) with provided system name'
+    )
+
     parser.add_argument(
         '--version', '-v',
         action='version',
@@ -156,7 +164,7 @@ def run_cli(args=None):
 
     # Check if user tried to run CLI mode without required args
     if not (args.web or args.gui):
-        if not args.dat or not args.roms:
+        if not args.blindmatch_system and (not args.dat or not args.roms):
             parser.print_help()
             print("\nError: --dat and --roms are required for CLI mode.")
             return 1
@@ -179,21 +187,22 @@ def run_cli(args=None):
     multi_matcher = MultiROMMatcher()
     all_dat_infos = []
 
-    for dat_path in args.dat:
-        log(f"\nLoading DAT: {dat_path}")
-        if not os.path.exists(dat_path):
-            print(f"Error: DAT file not found: {dat_path}", file=sys.stderr)
-            return 1
+    if not args.blindmatch_system:
+        for dat_path in args.dat:
+            log(f"\nLoading DAT: {dat_path}")
+            if not os.path.exists(dat_path):
+                print(f"Error: DAT file not found: {dat_path}", file=sys.stderr)
+                return 1
 
-        try:
-            dat_info, roms = DATParser.parse_with_info(dat_path)
-            multi_matcher.add_dat(dat_info, roms)
-            all_dat_infos.append(dat_info)
-            log(f"   System: {dat_info.system_name}")
-            log(f"   ROMs in database: {dat_info.rom_count:,}")
-        except Exception as e:
-            print(f"Error: Failed to load DAT file: {e}", file=sys.stderr)
-            return 1
+            try:
+                dat_info, roms = DATParser.parse_with_info(dat_path)
+                multi_matcher.add_dat(dat_info, roms)
+                all_dat_infos.append(dat_info)
+                log(f"   System: {dat_info.system_name}")
+                log(f"   ROMs in database: {dat_info.rom_count:,}")
+            except Exception as e:
+                print(f"Error: Failed to load DAT file: {e}", file=sys.stderr)
+                return 1
 
     total_roms = sum(di.rom_count for di in all_dat_infos)
     if len(all_dat_infos) > 1:
@@ -225,7 +234,14 @@ def run_cli(args=None):
     log(f"   Found {len(scanned_files):,} files")
 
     # Match files
-    identified, unidentified = multi_matcher.match_all(scanned_files)
+    if args.blindmatch_system:
+        identified = []
+        for sc in scanned_files:
+            sc.matched_rom = build_blindmatch_rom(sc, args.blindmatch_system)
+            identified.append(sc)
+        unidentified = []
+    else:
+        identified, unidentified = multi_matcher.match_all(scanned_files)
 
     total = len(identified) + len(unidentified)
     percent = (len(identified) / total * 100) if total > 0 else 0

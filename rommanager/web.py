@@ -26,6 +26,7 @@ from .reporter import MissingROMReporter
 from .dat_library import DATLibrary
 from .dat_sources import DATSourceManager
 from .utils import format_size
+from .blindmatch import build_blindmatch_rom
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
@@ -51,6 +52,8 @@ state = {
     'scanning': False,
     'scan_progress': 0,
     'scan_total': 0,
+    'blindmatch_mode': False,
+    'blindmatch_system': '',
 }
 
 
@@ -163,6 +166,7 @@ def get_status():
         'scanning': state['scanning'],
         'scan_progress': state['scan_progress'],
         'scan_total': state['scan_total'],
+        'blindmatch_mode': state.get('blindmatch_mode', False),
     })
 
 
@@ -227,6 +231,7 @@ def start_scan():
     folder = data.get('folder')
     scan_archives = data.get('scan_archives', True)
     recursive = data.get('recursive', True)
+    blindmatch_system = (data.get('blindmatch_system') or '').strip()
 
     if not folder or not os.path.isdir(folder):
         return jsonify({'error': 'Invalid folder'}), 400
@@ -237,9 +242,12 @@ def start_scan():
     if state['scanning']:
         return jsonify({'error': 'Scan already in progress'}), 400
 
+    state['blindmatch_mode'] = bool(blindmatch_system)
+    state['blindmatch_system'] = blindmatch_system
+
     thread = threading.Thread(
         target=_scan_thread,
-        args=(folder, scan_archives, recursive)
+        args=(folder, scan_archives, recursive, blindmatch_system)
     )
     thread.daemon = True
     thread.start()
@@ -247,7 +255,7 @@ def start_scan():
     return jsonify({'success': True, 'message': 'Scan started'})
 
 
-def _scan_thread(folder, scan_archives, recursive):
+def _scan_thread(folder, scan_archives, recursive, blindmatch_system=""):
     state['scanning'] = True
     state['identified'] = []
     state['unidentified'] = []
@@ -262,10 +270,10 @@ def _scan_thread(folder, scan_archives, recursive):
                 ext = os.path.splitext(filepath)[1].lower()
                 if ext == '.zip' and scan_archives:
                     for scanned in FileScanner.scan_archive_contents(filepath):
-                        _process_scanned(scanned)
+                        _process_scanned(scanned, blindmatch_system)
                 else:
                     scanned = FileScanner.scan_file(filepath)
-                    _process_scanned(scanned)
+                    _process_scanned(scanned, blindmatch_system)
             except Exception:
                 pass
             state['scan_progress'] = i + 1
@@ -273,8 +281,11 @@ def _scan_thread(folder, scan_archives, recursive):
         state['scanning'] = False
 
 
-def _process_scanned(scanned):
-    match = state['multi_matcher'].match(scanned)
+def _process_scanned(scanned, blindmatch_system=""):
+    if blindmatch_system:
+        match = build_blindmatch_rom(scanned, blindmatch_system)
+    else:
+        match = state['multi_matcher'].match(scanned)
     scanned.matched_rom = match
     if match:
         state['identified'].append(scanned)
@@ -812,6 +823,7 @@ HTML_TEMPLATE = r'''
             const [action, setAction] = useState('copy');
             const [scanArchives, setScanArchives] = useState(true);
             const [recursive, setRecursive] = useState(true);
+            const [blindmatchSystem, setBlindmatchSystem] = useState('');
             const [activeTab, setActiveTab] = useState('identified');
             const [selected, setSelected] = useState(new Set());
             const [notification, setNotification] = useState(null);
@@ -921,7 +933,7 @@ HTML_TEMPLATE = r'''
             /* ── Scan ──────── */
             const startScan = async () => {
                 if (!romFolder) return notify('warning', 'Enter ROM folder path');
-                const res = await api.post('/api/scan', { folder: romFolder, scan_archives: scanArchives, recursive });
+                const res = await api.post('/api/scan', { folder: romFolder, scan_archives: scanArchives, recursive, blindmatch_system: blindmatchSystem });
                 if (res.error) notify('error', res.error);
                 else { notify('success', 'Scan started'); refreshStatus(); }
             };
@@ -1426,7 +1438,7 @@ HTML_TEMPLATE = r'''
                                         Scan
                                     </button>
                                 </div>
-                                <div className="flex gap-4 mb-3">
+                                <div className="flex gap-4 mb-3 items-center">
                                     <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
                                         <input type="checkbox" checked={scanArchives} onChange={e => setScanArchives(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
                                         Scan ZIPs
@@ -1435,6 +1447,9 @@ HTML_TEMPLATE = r'''
                                         <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
                                         Recursive
                                     </label>
+                                    <input type="text" value={blindmatchSystem} onChange={e => setBlindmatchSystem(e.target.value)}
+                                        placeholder="BlindMatch system (optional)"
+                                        className="px-3 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-sm min-w-[260px]" />
                                 </div>
                                 {status.scanning && (
                                     <div className="space-y-2">
