@@ -457,3 +457,25 @@ Compatibility: Python 3.8+, tkinter (any version)
 Tested Against: R0MM v2 (gui.py)
 
 Last Updated: 2026-02-16
+
+
+## Atualização 2026-02 - Progressive Disclosure e Consistência Visual
+
+### Tkinter (gui.py)
+- Navegação lateral com 3 vistas: **Dashboard/Estatísticas**, **Scanner & DATs** e **Organizador e Resultados**.
+- Remoção do layout monolítico para reduzir carga cognitiva.
+- Opções avançadas de scan (ZIP, recursividade, BlindMatch) ocultas por padrão em **Opções Avançadas**.
+- Organização de ações com hierarquia clara: secundária (Undo) à esquerda e primária (Organize) destacada à direita.
+
+### Flet (gui_flet.py)
+- Introdução de tokens de layout e disciplina de múltiplos de 8 para espaçamento e padding.
+- Padronização de cantos: raio 8 para controles compactos e 12 para cartões/painéis.
+- Ícones de botões normalizados para tamanho 20.
+- Grid da biblioteca refinado para proporção de cards mais equilibrada.
+- Painel de detalhe lateral com largura confortável para exibição de hashes longas.
+
+### PySide6 (gui_pyside6.py)
+- Esqueleto inicial premium com **janela frameless** e barra de título integrada (busca + ações).
+- Estrutura **three-pane layout** (navegação/filtros, conteúdo, drawer contextual).
+- Fluxo de scan modular iniciado por **wizard modal** sobre overlay escurecido.
+- Base de tema com suporte dark/light via QSS para evitar visual padrão do Qt.

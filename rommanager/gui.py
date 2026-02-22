@@ -156,12 +156,15 @@ class ROMManagerGUI:
         style.configure('TLabelframe.Label', background=self.colors['bg'],
                         foreground=self.colors['accent'], font=('Segoe UI', 10, 'bold'))
         style.configure('Header.TLabel', font=('Segoe UI', 18, 'bold'), foreground=self.colors['accent'])
+        style.configure('SectionTitle.TLabel', font=('Segoe UI', 13, 'bold'), foreground=self.colors['accent'])
+        style.configure('Subtle.TLabel', font=('Segoe UI', 9), foreground=self.colors['fg'])
         style.configure('Stats.TLabel', font=('Segoe UI', 11))
         style.configure('Treeview', background=self.colors['surface'], foreground=self.colors['fg'],
                         fieldbackground=self.colors['surface'], font=('Segoe UI', 9))
         style.configure('Treeview.Heading', background=self.colors['bg'],
                         foreground=self.colors['accent'], font=('Segoe UI', 10, 'bold'))
         style.map('Treeview', background=[('selected', self.colors['accent'])])
+        style.configure('Primary.TButton', font=('Segoe UI', 10, 'bold'))
 
     # ── Menu ──────────────────────────────────────────────────────
 
@@ -207,78 +210,117 @@ class ROMManagerGUI:
     # ── UI Build ──────────────────────────────────────────────────
 
     def _build_ui(self):
-        main = ttk.Frame(self.root, padding=10)
+        main = ttk.Frame(self.root, padding=12)
         main.pack(fill=tk.BOTH, expand=True)
 
-        # Header
         header = ttk.Frame(main)
-        header.pack(fill=tk.X, pady=(0, 10))
+        header.pack(fill=tk.X, pady=(0, 12))
         ttk.Label(header, text=_tr("title_main"), style='Header.TLabel').pack(side=tk.LEFT, anchor=tk.W)
         ttk.Button(header, text="Nova sessão", command=self._new_session).pack(side=tk.RIGHT)
 
-        # Top: DATs + Scan
-        top = ttk.Frame(main)
-        top.pack(fill=tk.X, pady=(0, 8))
+        body = ttk.Frame(main)
+        body.pack(fill=tk.BOTH, expand=True)
 
-        # DAT Panel
-        dat_frame = ttk.LabelFrame(top, text=_tr("panel_dat_files"), padding=8)
-        dat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
+        sidebar = ttk.Frame(body, padding=(0, 0, 12, 0))
+        sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        ttk.Label(sidebar, text="Navegação", style='SectionTitle.TLabel').pack(anchor=tk.W, pady=(0, 12))
+        self.current_view_var = tk.StringVar(value="dashboard")
+        for label, view_key in [
+            ("Dashboard/Estatísticas", "dashboard"),
+            ("Scanner & DATs", "scanner"),
+            ("Organizador e Resultados", "results"),
+        ]:
+            ttk.Radiobutton(
+                sidebar,
+                text=label,
+                value=view_key,
+                variable=self.current_view_var,
+                command=self._switch_view,
+            ).pack(fill=tk.X, anchor=tk.W, pady=(0, 6))
+
+        self.view_container = ttk.Frame(body)
+        self.view_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.dashboard_view = ttk.Frame(self.view_container)
+        self.scan_view = ttk.Frame(self.view_container)
+        self.results_view = ttk.Frame(self.view_container)
+
+        self._build_dashboard_view()
+        self._build_scanner_view()
+        self._build_results_view()
+        self._switch_view()
+
+    def _build_dashboard_view(self):
+        self.stats_var = tk.StringVar(value=_tr("stats_no_files"))
+        ttk.Label(self.dashboard_view, text="Dashboard", style='SectionTitle.TLabel').pack(anchor=tk.W, pady=(0, 8))
+        ttk.Label(self.dashboard_view, textvariable=self.stats_var, style='Stats.TLabel').pack(anchor=tk.W, pady=(0, 12))
+        ttk.Label(
+            self.dashboard_view,
+            text="Use a barra lateral para configurar DATs, fazer scan e organizar resultados.",
+            style='Subtle.TLabel',
+        ).pack(anchor=tk.W)
+
+    def _build_scanner_view(self):
+        ttk.Label(self.scan_view, text=_tr("panel_dat_files"), style='SectionTitle.TLabel').pack(anchor=tk.W, pady=(0, 6))
+        dat_frame = ttk.Frame(self.scan_view, padding=(0, 0, 0, 12))
+        dat_frame.pack(fill=tk.BOTH, expand=True)
         dat_btn = ttk.Frame(dat_frame)
         dat_btn.pack(fill=tk.X)
         ttk.Button(dat_btn, text=_tr("btn_add_dat"), command=self._add_dat).pack(side=tk.LEFT)
-        ttk.Button(dat_btn, text=_tr("btn_remove"), command=self._remove_dat).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(dat_btn, text=_tr("btn_library"), command=self._show_dat_library).pack(side=tk.LEFT, padx=(5, 0))
-        
-        # DAT List with Scrollbar (Fixed Structure)
+        ttk.Button(dat_btn, text=_tr("btn_remove"), command=self._remove_dat).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(dat_btn, text=_tr("btn_library"), command=self._show_dat_library).pack(side=tk.LEFT, padx=(8, 0))
+
         dat_list_frame = ttk.Frame(dat_frame)
-        dat_list_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-        
+        dat_list_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
         dat_sb = ttk.Scrollbar(dat_list_frame, orient=tk.VERTICAL)
-        self.dat_listbox = tk.Listbox(dat_list_frame, height=3, bg=self.colors['surface'],
-                                       fg=self.colors['fg'], selectbackground=self.colors['accent'],
-                                       font=('Segoe UI', 9), yscrollcommand=dat_sb.set)
+        self.dat_listbox = tk.Listbox(dat_list_frame, height=5, bg=self.colors['surface'],
+                                      fg=self.colors['fg'], selectbackground=self.colors['accent'],
+                                      font=('Segoe UI', 9), yscrollcommand=dat_sb.set)
         dat_sb.config(command=self.dat_listbox.yview)
-        
         dat_sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.dat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
         self.dat_info_var = tk.StringVar(value=_tr("no_dats_loaded"))
-        ttk.Label(dat_frame, textvariable=self.dat_info_var).pack(anchor=tk.W, pady=(3, 0))
+        ttk.Label(dat_frame, textvariable=self.dat_info_var, style='Subtle.TLabel').pack(anchor=tk.W, pady=(6, 0))
 
-        # Scan Panel
-        scan_frame = ttk.LabelFrame(top, text=_tr("panel_scan"), padding=8)
-        scan_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 0))
+        ttk.Label(self.scan_view, text=_tr("panel_scan"), style='SectionTitle.TLabel').pack(anchor=tk.W, pady=(6, 6))
+        scan_frame = ttk.Frame(self.scan_view)
+        scan_frame.pack(fill=tk.X)
         scan_row = ttk.Frame(scan_frame)
         scan_row.pack(fill=tk.X)
         self.scan_path_var = tk.StringVar(value=_tr("no_folder_selected"))
-        ttk.Label(scan_row, textvariable=self.scan_path_var, width=40).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(scan_row, textvariable=self.scan_path_var, width=45).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(scan_row, text=_tr("btn_select_folder"), command=self._select_folder).pack(side=tk.LEFT)
-        ttk.Button(scan_row, text=_tr("btn_scan"), command=self._start_scan).pack(side=tk.LEFT, padx=(5, 0))
-        opts = ttk.Frame(scan_frame)
-        opts.pack(fill=tk.X, pady=(5, 0))
-        self.scan_archives_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opts, text=_tr("scan_inside_zips"), variable=self.scan_archives_var).pack(side=tk.LEFT)
-        self.recursive_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opts, text=_tr("recursive"), variable=self.recursive_var).pack(side=tk.LEFT, padx=(15, 0))
-        self.blindmatch_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opts, text="BlindMatch", variable=self.blindmatch_var).pack(side=tk.LEFT, padx=(15, 0))
-        self.blindmatch_system_var = tk.StringVar(value="")
-        ttk.Entry(opts, textvariable=self.blindmatch_system_var, width=20).pack(side=tk.LEFT, padx=(6, 0))
-        self.progress_var = tk.StringVar(value="")
-        ttk.Label(scan_frame, textvariable=self.progress_var).pack(anchor=tk.W)
-        self.progress_bar = ttk.Progressbar(scan_frame, mode='determinate')
-        self.progress_bar.pack(fill=tk.X, pady=(3, 0))
+        ttk.Button(scan_row, text=_tr("btn_scan"), command=self._start_scan).pack(side=tk.LEFT, padx=(8, 0))
 
+        self.advanced_scan_visible = tk.BooleanVar(value=False)
+        ttk.Button(scan_frame, text="Opções Avançadas", command=self._toggle_advanced_scan_options).pack(anchor=tk.W, pady=(8, 0))
+        self.advanced_scan_frame = ttk.Frame(scan_frame)
+
+        self.scan_archives_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.advanced_scan_frame, text=_tr("scan_inside_zips"), variable=self.scan_archives_var).pack(side=tk.LEFT)
+        self.recursive_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.advanced_scan_frame, text=_tr("recursive"), variable=self.recursive_var).pack(side=tk.LEFT, padx=(16, 0))
+        self.blindmatch_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self.advanced_scan_frame, text="BlindMatch", variable=self.blindmatch_var).pack(side=tk.LEFT, padx=(16, 0))
+        self.blindmatch_system_var = tk.StringVar(value="")
+        ttk.Entry(self.advanced_scan_frame, textvariable=self.blindmatch_system_var, width=20).pack(side=tk.LEFT, padx=(8, 0))
+
+        self.progress_var = tk.StringVar(value="")
+        ttk.Label(scan_frame, textvariable=self.progress_var, style='Subtle.TLabel').pack(anchor=tk.W, pady=(8, 0))
+        self.progress_bar = ttk.Progressbar(scan_frame, mode='determinate')
+        self.progress_bar.pack(fill=tk.X, pady=(4, 0))
+
+    def _build_results_view(self):
         # Search
-        sf = ttk.Frame(main)
-        sf.pack(fill=tk.X, pady=(0, 5))
+        sf = ttk.Frame(self.results_view)
+        sf.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(sf, text=_tr("search")).pack(side=tk.LEFT)
         self._search_var = tk.StringVar()
         self._search_var.trace_add('write', self._on_search)
         ttk.Entry(sf, textvariable=self._search_var, width=40).pack(side=tk.LEFT, padx=(8, 0), fill=tk.X, expand=True)
 
         # Tabs
-        self.notebook = ttk.Notebook(main)
+        self.notebook = ttk.Notebook(self.results_view)
         self.notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
         # Identified
@@ -333,11 +375,9 @@ class ROMManagerGUI:
         self.ms_tree.bind('<Control-Button-1>', lambda e: self.root.after(10, self._update_ms_selection_count))
 
         # Stats
-        self.stats_var = tk.StringVar(value=_tr("stats_no_files"))
-        ttk.Label(main, textvariable=self.stats_var, style='Stats.TLabel').pack(anchor=tk.W, pady=(0, 8))
-
         # Organization
-        org = ttk.LabelFrame(main, text=_tr("organization"), padding=8)
+        ttk.Label(self.results_view, text=_tr("organization"), style='SectionTitle.TLabel').pack(anchor=tk.W, pady=(6, 6))
+        org = ttk.Frame(self.results_view)
         org.pack(fill=tk.X)
         sr = ttk.Frame(org)
         sr.pack(fill=tk.X)
@@ -355,9 +395,14 @@ class ROMManagerGUI:
         self.action_var = tk.StringVar(value='copy')
         ttk.Radiobutton(orw, text=_tr("copy_action"), value='copy', variable=self.action_var).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Radiobutton(orw, text=_tr("move_action"), value='move', variable=self.action_var).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(orw, text=_tr("btn_preview"), command=self._preview).pack(side=tk.LEFT, padx=(15, 0))
-        ttk.Button(orw, text=_tr("organize_now"), command=self._organize).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(orw, text=_tr("btn_undo"), command=self._undo).pack(side=tk.LEFT, padx=(5, 0))
+        actions_left = ttk.Frame(orw)
+        actions_left.pack(side=tk.LEFT)
+        ttk.Button(actions_left, text=_tr("btn_undo"), command=self._undo).pack(side=tk.LEFT)
+
+        actions_right = ttk.Frame(orw)
+        actions_right.pack(side=tk.RIGHT)
+        ttk.Button(actions_right, text=_tr("btn_preview"), command=self._preview).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(actions_right, text=_tr("organize_now"), style='Primary.TButton', command=self._organize).pack(side=tk.LEFT)
 
         # Keyboard shortcuts
         self.root.bind('<Control-a>', self._on_select_all)
@@ -365,6 +410,26 @@ class ROMManagerGUI:
         self.root.bind('<F5>', self._on_refresh)
         self.root.bind('<Delete>', self._on_delete_key)
         self.root.bind('<Escape>', self._on_escape)
+
+    def _switch_view(self):
+        target = self.current_view_var.get()
+        for key, view in {
+            "dashboard": self.dashboard_view,
+            "scanner": self.scan_view,
+            "results": self.results_view,
+        }.items():
+            if key == target:
+                view.pack(fill=tk.BOTH, expand=True)
+            else:
+                view.pack_forget()
+
+    def _toggle_advanced_scan_options(self):
+        current = self.advanced_scan_visible.get()
+        self.advanced_scan_visible.set(not current)
+        if self.advanced_scan_visible.get():
+            self.advanced_scan_frame.pack(fill=tk.X, pady=(8, 0))
+        else:
+            self.advanced_scan_frame.pack_forget()
 
     # ── Helpers ───────────────────────────────────────────────────
 

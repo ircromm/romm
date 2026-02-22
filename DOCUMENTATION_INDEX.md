@@ -455,3 +455,5 @@ For desktop-Flet maintenance and compatibility rules, read:
 - `docs/FLET_AGENT_PROTOCOL.md`
 
 Use this guide before changing dialogs, snackbars, overlays, or page open/close behavior in `rommanager/gui_flet.py`.
+
+- README_UX_PATTERNS.md: atualização de padrões com Progressive Disclosure (Tkinter), grade 8pt (Flet) e blueprint PySide6 premium.
