@@ -20,12 +20,16 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rommanager import __version__
+from rommanager.monitor import setup_runtime_monitor, monitor_action
 
 
 def main():
     """Main entry point"""
+    logger = setup_runtime_monitor()
+    monitor_action("startup: main.py entry", logger=logger)
     # Check for --web flag
     if '--web' in sys.argv:
+        monitor_action('mode selected: web', logger=logger)
         # Get optional host and port
         host = '127.0.0.1'
         port = 5000
@@ -48,6 +52,7 @@ def main():
 
     # Check for --gui flag (legacy tkinter)
     if '--gui' in sys.argv:
+        monitor_action('mode selected: tkinter', logger=logger)
         from rommanager.gui import run_gui, GUI_AVAILABLE
         if GUI_AVAILABLE:
             sys.exit(run_gui())
@@ -77,6 +82,7 @@ def main():
             print(f"Warning: launcher failed ({e}). Falling back to CLI help.")
 
     if len(sys.argv) > 1 and sys.argv[1] not in ('-h', '--help'):
+        monitor_action('mode selected: cli', logger=logger)
         # CLI mode
         from rommanager.cli import run_cli
         sys.exit(run_cli())

@@ -15,6 +15,7 @@ from typing import List
 from flask import Flask, jsonify, request, render_template_string
 from werkzeug.utils import secure_filename
 
+from .monitor import setup_runtime_monitor, monitor_action
 from .models import ROMInfo, ScannedFile, DATInfo, Collection
 from .parser import DATParser
 from .scanner import FileScanner
@@ -1916,6 +1917,8 @@ HTML_TEMPLATE = r'''
 
 def run_server(host='127.0.0.1', port=5000, debug=False):
     """Run the web server"""
+    logger = setup_runtime_monitor()
+    monitor_action(f"run_server called: host={host} port={port} debug={debug}", logger=logger)
     print(f"ROM Collection Manager v2 - Web Interface")
     print(f"=" * 50)
     print(f"Open in your browser: http://{host}:{port}")
