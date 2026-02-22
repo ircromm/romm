@@ -19,6 +19,7 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
+from .i18n import tr, set_language, get_language, LANG_EN, LANG_PT_BR
 from .shared_config import STRATEGIES
 
 # ─── Catppuccin Mocha Palette ──────────────────────────────────────────────────
@@ -286,14 +287,14 @@ class DetailPanel(ft.Container):
 
         self.action_row.controls = [
             ft.ElevatedButton(
-                "Open Folder",
+                tr("flet_open_folder"),
                 icon=ft.Icons.FOLDER_OPEN,
                 bgcolor=MOCHA["surface0"],
                 color=MOCHA["text"],
                 on_click=self._open_folder,
             ),
             ft.ElevatedButton(
-                "Copy CRC32",
+                tr("flet_copy_crc"),
                 icon=ft.Icons.CONTENT_COPY,
                 bgcolor=MOCHA["surface0"],
                 color=MOCHA["text"],
@@ -323,7 +324,7 @@ class DetailPanel(ft.Container):
     async def _copy_crc(self, e):
         if self._scanned:
             await self._clipboard.set(self._scanned.crc32.upper())
-            _show_snack(self._pg, "CRC32 copied to clipboard!")
+            _show_snack(self._pg, tr("flet_crc_copied"))
 
 
 # ─── Empty State Widget ──────────────────────────────────────────────────────
@@ -374,17 +375,17 @@ class DashboardView(ft.Column):
             ft.Row(
                 controls=[
                     ft.Icon(ft.Icons.DASHBOARD_OUTLINED, size=28, color=MOCHA["mauve"]),
-                    ft.Text("Dashboard", size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
+                    ft.Text(tr("flet_nav_dashboard"), size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
                 ],
                 spacing=12,
             )
         )
 
         stats = [
-            ("DAT Files", str(len(dats)), ft.Icons.DESCRIPTION_OUTLINED, MOCHA["blue"]),
-            ("Identified", str(id_count), ft.Icons.CHECK_CIRCLE_OUTLINE, MOCHA["green"]),
-            ("Unidentified", str(un_count), ft.Icons.HELP_OUTLINE, MOCHA["peach"]),
-            ("Total Scanned", str(total), ft.Icons.STORAGE_OUTLINED, MOCHA["lavender"]),
+            (tr("flet_dat_files"), str(len(dats)), ft.Icons.DESCRIPTION_OUTLINED, MOCHA["blue"]),
+            (tr("tab_identified"), str(id_count), ft.Icons.CHECK_CIRCLE_OUTLINE, MOCHA["green"]),
+            (tr("tab_unidentified"), str(un_count), ft.Icons.HELP_OUTLINE, MOCHA["peach"]),
+            (tr("flet_total"), str(total), ft.Icons.STORAGE_OUTLINED, MOCHA["lavender"]),
         ]
 
         stat_cards = []
@@ -417,7 +418,7 @@ class DashboardView(ft.Column):
 
         if dats:
             self.controls.append(
-                ft.Text("Collection Completeness", size=18, weight=ft.FontWeight.W_600, color=MOCHA["text"])
+                ft.Text(tr("flet_collection_completeness"), size=18, weight=ft.FontWeight.W_600, color=MOCHA["text"])
             )
             completeness = self.state.multi_matcher.get_completeness_by_dat(self.state.identified)
             for dat_id, comp in completeness.items():
@@ -602,7 +603,7 @@ class ImportScanView(ft.Column):
         self._pg.overlay.append(self.folder_picker)
 
         self.dat_list = ft.ListView(spacing=4, height=180, padding=ft.padding.all(8))
-        self.folder_path_text = ft.Text("No folder selected", size=13, color=MOCHA["subtext0"], expand=True)
+        self.folder_path_text = ft.Text(tr("flet_no_folder"), size=13, color=MOCHA["subtext0"], expand=True)
         self.recursive_switch = ft.Switch(label="Recursive", value=True, active_color=MOCHA["mauve"], label_text_style=ft.TextStyle(color=MOCHA["text"], size=12))
         self.archives_switch = ft.Switch(label="Scan archives", value=True, active_color=MOCHA["mauve"], label_text_style=ft.TextStyle(color=MOCHA["text"], size=12))
 
@@ -629,14 +630,14 @@ class ImportScanView(ft.Column):
             ft.Row(
                 controls=[
                     ft.Icon(ft.Icons.UPLOAD_FILE, size=28, color=MOCHA["mauve"]),
-                    ft.Text("Import & Scan", size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
+                    ft.Text(tr("flet_import_scan"), size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
                 ],
                 spacing=12,
             ),
             ft.Container(height=10),
 
-            ft.Text("DAT Files", size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
-            ft.Text("Load No-Intro, Redump, or TOSEC XML DAT files to identify your ROMs.", size=12, color=MOCHA["subtext0"]),
+            ft.Text(tr("flet_dat_files"), size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
+            ft.Text(tr("flet_dat_help"), size=12, color=MOCHA["subtext0"]),
             ft.Container(height=6),
             ft.Container(
                 content=ft.Column(
@@ -645,14 +646,14 @@ class ImportScanView(ft.Column):
                         ft.Row(
                             controls=[
                                 ft.ElevatedButton(
-                                    "Add DAT",
+                                    tr("flet_add_dat"),
                                     icon=ft.Icons.ADD,
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._on_add_dat_click,
                                 ),
                                 ft.ElevatedButton(
-                                    "Remove Selected",
+                                    tr("flet_remove_selected"),
                                     icon=ft.Icons.DELETE_OUTLINE,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
@@ -672,8 +673,8 @@ class ImportScanView(ft.Column):
 
             ft.Container(height=20),
 
-            ft.Text("Scan Folder", size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
-            ft.Text("Select a folder containing ROM files to scan and match against loaded DATs.", size=12, color=MOCHA["subtext0"]),
+            ft.Text(tr("flet_scan_folder"), size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
+            ft.Text(tr("flet_scan_help"), size=12, color=MOCHA["subtext0"]),
             ft.Container(height=6),
             ft.Container(
                 content=ft.Column(
@@ -683,7 +684,7 @@ class ImportScanView(ft.Column):
                                 ft.Icon(ft.Icons.FOLDER_OUTLINED, color=MOCHA["overlay1"]),
                                 self.folder_path_text,
                                 ft.ElevatedButton(
-                                    "Browse",
+                                    tr("flet_browse"),
                                     icon=ft.Icons.FOLDER_OPEN,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
@@ -936,7 +937,7 @@ class ToolsLogsView(ft.Column):
             text_size=13,
         )
 
-        self.output_path_text = ft.Text("No output folder selected", size=13, color=MOCHA["subtext0"], expand=True)
+        self.output_path_text = ft.Text(tr("flet_no_output"), size=13, color=MOCHA["subtext0"], expand=True)
         self._output_folder = ""
 
         self.log_view = ft.ListView(spacing=2, height=200, padding=ft.padding.all(8), auto_scroll=True)
@@ -949,14 +950,14 @@ class ToolsLogsView(ft.Column):
             ft.Row(
                 controls=[
                     ft.Icon(ft.Icons.BUILD_OUTLINED, size=28, color=MOCHA["mauve"]),
-                    ft.Text("Tools & Logs", size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
+                    ft.Text(tr("flet_tools_logs"), size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
                 ],
                 spacing=12,
             ),
             ft.Container(height=10),
 
-            ft.Text("Organize ROMs", size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
-            ft.Text("Arrange your identified ROMs using various organization strategies.", size=12, color=MOCHA["subtext0"]),
+            ft.Text(tr("flet_organize_roms"), size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
+            ft.Text(tr("flet_organize_help"), size=12, color=MOCHA["subtext0"]),
             ft.Container(height=6),
             ft.Container(
                 content=ft.Column(
@@ -970,7 +971,7 @@ class ToolsLogsView(ft.Column):
                                 ft.Icon(ft.Icons.FOLDER_OUTLINED, color=MOCHA["overlay1"]),
                                 self.output_path_text,
                                 ft.ElevatedButton(
-                                    "Browse",
+                                    tr("flet_browse"),
                                     icon=ft.Icons.FOLDER_OPEN,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
@@ -983,21 +984,21 @@ class ToolsLogsView(ft.Column):
                         ft.Row(
                             controls=[
                                 ft.ElevatedButton(
-                                    "Preview",
+                                    tr("flet_preview"),
                                     icon=ft.Icons.PREVIEW,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._preview_organize,
                                 ),
                                 ft.ElevatedButton(
-                                    "Organize",
+                                    tr("flet_organize"),
                                     icon=ft.Icons.AUTO_FIX_HIGH,
                                     bgcolor=MOCHA["green"],
                                     color=MOCHA["crust"],
                                     on_click=self._execute_organize,
                                 ),
                                 ft.ElevatedButton(
-                                    "Undo Last",
+                                    tr("flet_undo_last"),
                                     icon=ft.Icons.UNDO,
                                     bgcolor=MOCHA["peach"],
                                     color=MOCHA["crust"],
@@ -1017,8 +1018,8 @@ class ToolsLogsView(ft.Column):
 
             ft.Container(height=20),
 
-            ft.Text("Collections", size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
-            ft.Text("Save or load your session for later use.", size=12, color=MOCHA["subtext0"]),
+            ft.Text(tr("flet_collections"), size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
+            ft.Text(tr("flet_collections_help"), size=12, color=MOCHA["subtext0"]),
             ft.Container(height=6),
             ft.Container(
                 content=ft.Column(
@@ -1027,14 +1028,14 @@ class ToolsLogsView(ft.Column):
                             controls=[
                                 self.save_name_field,
                                 ft.ElevatedButton(
-                                    "Save",
+                                    tr("flet_save"),
                                     icon=ft.Icons.SAVE,
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._save_collection,
                                 ),
                                 ft.ElevatedButton(
-                                    "Load",
+                                    tr("flet_load"),
                                     icon=ft.Icons.FOLDER_OPEN,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
@@ -1055,7 +1056,7 @@ class ToolsLogsView(ft.Column):
 
             ft.Container(height=20),
 
-            ft.Text("Activity Log", size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
+            ft.Text(tr("flet_activity_log"), size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
             ft.Container(height=6),
             ft.Container(
                 content=self.log_view,
@@ -1084,7 +1085,7 @@ class ToolsLogsView(ft.Column):
 
     def _preview_organize(self, e):
         if not self.state.identified:
-            self._log("No identified ROMs to organize.", MOCHA["peach"])
+            self._log(tr("flet_no_identified_to_organize"), MOCHA["peach"])
             return
         if not self._output_folder:
             self._log("Please select an output folder first.", MOCHA["peach"])
@@ -1105,7 +1106,7 @@ class ToolsLogsView(ft.Column):
 
     def _execute_organize(self, e):
         if not self.state.identified:
-            self._log("No identified ROMs to organize.", MOCHA["peach"])
+            self._log(tr("flet_no_identified_to_organize"), MOCHA["peach"])
             return
         if not self._output_folder:
             self._log("Please select an output folder first.", MOCHA["peach"])
@@ -1190,7 +1191,7 @@ class ToolsLogsView(ft.Column):
 
 # ─── Main Application ────────────────────────────────────────────────────────
 def main(page: ft.Page):
-    page.title = "RetroFlow - ROM Collection Manager"
+    page.title = f"{tr('flet_brand')} - {tr('title_main')}"
     page.bgcolor = MOCHA["base"]
     page.padding = 0
     page.spacing = 0
@@ -1233,7 +1234,14 @@ def main(page: ft.Page):
             content=ft.Column(
                 controls=[
                     ft.Icon(ft.Icons.SPORTS_ESPORTS, size=32, color=MOCHA["mauve"]),
-                    ft.Text("RetroFlow", size=11, weight=ft.FontWeight.BOLD, color=MOCHA["mauve"]),
+                    ft.Text(tr("flet_brand"), size=11, weight=ft.FontWeight.BOLD, color=MOCHA["mauve"]),
+                    ft.Dropdown(
+                        width=150,
+                        value=get_language(),
+                        options=[ft.dropdown.Option(LANG_EN, tr("language_english")), ft.dropdown.Option(LANG_PT_BR, tr("language_ptbr"))],
+                        on_change=lambda e: (set_language(e.control.value), page.clean(), main(page)),
+                        text_size=11,
+                    ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=4,
@@ -1244,22 +1252,22 @@ def main(page: ft.Page):
             ft.NavigationRailDestination(
                 icon=ft.Icons.DASHBOARD_OUTLINED,
                 selected_icon=ft.Icons.DASHBOARD,
-                label="Dashboard",
+                label=tr("flet_nav_dashboard"),
             ),
             ft.NavigationRailDestination(
                 icon=ft.Icons.GRID_VIEW_OUTLINED,
                 selected_icon=ft.Icons.GRID_VIEW,
-                label="Library",
+                label=tr("flet_nav_library"),
             ),
             ft.NavigationRailDestination(
                 icon=ft.Icons.UPLOAD_FILE_OUTLINED,
                 selected_icon=ft.Icons.UPLOAD_FILE,
-                label="Import",
+                label=tr("flet_nav_import"),
             ),
             ft.NavigationRailDestination(
                 icon=ft.Icons.BUILD_OUTLINED,
                 selected_icon=ft.Icons.BUILD,
-                label="Tools",
+                label=tr("flet_nav_tools"),
             ),
         ],
         on_change=lambda e: switch_view(e.control.selected_index),
