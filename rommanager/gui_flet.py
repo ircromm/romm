@@ -512,7 +512,7 @@ class LibraryView(ft.Row):
         self.navigate_cb = navigate_cb
 
         self.search_field = ft.TextField(
-            hint_text="Search games...",
+            hint_text=_tr("flet_search_games"),
             prefix_icon=ft.Icons.SEARCH,
             border_radius=8,
             bgcolor=MOCHA["surface0"],
@@ -546,9 +546,9 @@ class LibraryView(ft.Row):
                 controls=[
                     self._build_toolbar(),
                     empty_state(
-                        "Your library is empty",
-                        "Import a DAT file and scan a folder to see your ROMs here.",
-                        "Import & Scan",
+                        _tr("flet_library_empty_title"),
+                        _tr("flet_library_empty_desc"),
+                        _tr("flet_import_scan"),
                         lambda e: self.navigate_cb(2),
                     ),
                 ],
@@ -580,7 +580,7 @@ class LibraryView(ft.Row):
                     self.search_field,
                     ft.Container(width=12),
                     ft.Text(
-                        f"{id_count} identified  |  {un_count} unidentified  |  {pct:.0f}%",
+                        f"{id_count} {_tr('flet_identified')}  |  {un_count} {_tr('flet_unidentified')}  |  {pct:.0f}%",
                         size=12,
                         color=MOCHA["subtext0"],
                     ),
@@ -630,11 +630,11 @@ class ImportScanView(ft.Column):
 
         self.dat_list = ft.ListView(spacing=4, height=180, padding=ft.padding.all(8))
         self.folder_path_text = ft.Text(_tr("flet_no_folder"), size=13, color=MOCHA["subtext0"], expand=True)
-        self.recursive_switch = ft.Switch(label="Recursive", value=True, active_color=MOCHA["mauve"], label_text_style=ft.TextStyle(color=MOCHA["text"], size=12))
-        self.archives_switch = ft.Switch(label="Scan archives", value=True, active_color=MOCHA["mauve"], label_text_style=ft.TextStyle(color=MOCHA["text"], size=12))
+        self.recursive_switch = ft.Switch(label=_tr("recursive"), value=True, active_color=MOCHA["mauve"], label_text_style=ft.TextStyle(color=MOCHA["text"], size=12))
+        self.archives_switch = ft.Switch(label=_tr("scan_archives"), value=True, active_color=MOCHA["mauve"], label_text_style=ft.TextStyle(color=MOCHA["text"], size=12))
 
         self.scan_btn = ft.ElevatedButton(
-            "Start Scan",
+            _tr("btn_scan"),
             icon=ft.Icons.RADAR,
             bgcolor=MOCHA["green"],
             color=MOCHA["crust"],
@@ -645,7 +645,7 @@ class ImportScanView(ft.Column):
 
         self.progress_text = ft.Text("", size=12, color=MOCHA["subtext0"])
         self.blindmatch_switch = ft.Switch(label="BlindMatch", value=False, tooltip="BlindMatch")
-        self.blindmatch_system_field = ft.TextField(label="System", width=220, tooltip="BlindMatch system")
+        self.blindmatch_system_field = ft.TextField(label=_tr("system"), width=220, tooltip=_tr("tip_blindmatch_system"))
         self._selected_folder = ""
 
     def build_content(self):
@@ -679,7 +679,7 @@ class ImportScanView(ft.Column):
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._on_add_dat_click,
-                                    tooltip=_tr("flet_add_dat"),
+                                    tooltip=_tr("tip_add_dat"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_remove_selected"),
@@ -687,7 +687,7 @@ class ImportScanView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._remove_selected_dat,
-                                    tooltip=_tr("flet_remove_selected"),
+                                    tooltip=_tr("tip_remove_dat"),
                                 ),
                             ],
                             spacing=8,
@@ -719,7 +719,7 @@ class ImportScanView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._on_browse_folder_click,
-                                    tooltip=_tr("flet_browse"),
+                                    tooltip=_tr("tip_select_rom_folder"),
                                 ),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -779,7 +779,7 @@ class ImportScanView(ft.Column):
 
     async def _on_add_dat_click(self, e):
         files = await self.dat_picker.pick_files(
-            dialog_title="Select DAT file",
+            dialog_title=_tr("select_dat_file"),
             allowed_extensions=["dat", "xml", "gz", "zip"],
             allow_multiple=True,
         )
@@ -821,7 +821,7 @@ class ImportScanView(ft.Column):
             self.update()
 
     async def _on_browse_folder_click(self, e):
-        path = await self.folder_picker.get_directory_path(dialog_title="Select ROM folder")
+        path = await self.folder_picker.get_directory_path(dialog_title=_tr("select_rom_folder"))
         if path:
             self._selected_folder = path
             self.folder_path_text.value = path
@@ -897,7 +897,7 @@ class ImportScanView(ft.Column):
         finally:
             self.state.scanning = False
             self.scan_btn.disabled = False
-            self.scan_btn.text = "Start Scan"
+            self.scan_btn.text = _tr("btn_scan")
 
             id_count = len(self.state.identified)
             un_count = len(self.state.unidentified)
@@ -926,7 +926,7 @@ class ToolsLogsView(ft.Column):
         self._pg.overlay.append(self.output_picker)
 
         self.save_name_field = ft.TextField(
-            hint_text="Collection name",
+            hint_text=_tr("flet_collection_name"),
             border_radius=8,
             bgcolor=MOCHA["surface0"],
             color=MOCHA["text"],
@@ -942,7 +942,7 @@ class ToolsLogsView(ft.Column):
         self._pg.overlay.append(self.collection_picker)
 
         self.strategy_dropdown = ft.Dropdown(
-            label="Strategy",
+            label=_tr("strategy"),
             options=[ft.dropdown.Option(key=s["id"], text=s["name"]) for s in STRATEGIES],
             value="flat",
             border_radius=8,
@@ -956,10 +956,10 @@ class ToolsLogsView(ft.Column):
         )
 
         self.action_dropdown = ft.Dropdown(
-            label="Action",
+            label=_tr("action"),
             options=[
-                ft.dropdown.Option(key="copy", text="Copy"),
-                ft.dropdown.Option(key="move", text="Move"),
+                ft.dropdown.Option(key="copy", text=_tr("copy_action")),
+                ft.dropdown.Option(key="move", text=_tr("move_action")),
             ],
             value="copy",
             border_radius=8,
@@ -1024,7 +1024,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._preview_organize,
-                                    tooltip=_tr("flet_preview"),
+                                    tooltip=_tr("tip_preview_organization"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_organize"),
@@ -1032,7 +1032,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["green"],
                                     color=MOCHA["crust"],
                                     on_click=self._execute_organize,
-                                    tooltip=_tr("flet_organize"),
+                                    tooltip=_tr("tip_organize_now"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_undo_last"),
@@ -1040,7 +1040,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["peach"],
                                     color=MOCHA["crust"],
                                     on_click=self._undo_organize,
-                                    tooltip=_tr("flet_undo_last"),
+                                    tooltip=_tr("tip_undo_last"),
                                 ),
                             ],
                             spacing=8,
@@ -1071,7 +1071,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._save_collection,
-                                    tooltip=_tr("flet_save"),
+                                    tooltip=_tr("tip_save_collection"),
                                 ),
                                 ft.ElevatedButton(
                                     _tr("flet_load"),
@@ -1079,7 +1079,7 @@ class ToolsLogsView(ft.Column):
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._on_load_collection_click,
-                                    tooltip=_tr("flet_load"),
+                                    tooltip=_tr("tip_open_collection"),
                                 ),
                             ],
                             spacing=8,
@@ -1117,7 +1117,7 @@ class ToolsLogsView(ft.Column):
             pass
 
     async def _on_browse_output_click(self, e):
-        path = await self.output_picker.get_directory_path(dialog_title="Select output folder")
+        path = await self.output_picker.get_directory_path(dialog_title=_tr("select_output_folder"))
         if path:
             self._output_folder = path
             self.output_path_text.value = path
@@ -1203,7 +1203,7 @@ class ToolsLogsView(ft.Column):
 
     async def _on_load_collection_click(self, e):
         files = await self.collection_picker.pick_files(
-            dialog_title="Open Collection",
+            dialog_title=_tr("menu_open_collection"),
             allowed_extensions=["json"],
         )
         if not files:

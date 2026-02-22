@@ -906,14 +906,53 @@ HTML_TEMPLATE = r'''
                 const iv = setInterval(refreshStatus, 2000);
                 return () => clearInterval(iv);
             }, []);
-            // set button titles for hover tooltips
+            // set descriptive hover tooltips for button actions
             useEffect(() => {
+                const isPt = (navigator.language || '').toLowerCase().startsWith('pt');
+                const tipMapEn = {
+                    'Browse': 'Open the file browser to select a file or folder path.',
+                    'Add': 'Load the DAT file path into the active DAT list.',
+                    'Scan': 'Start scanning ROM files in the selected folder.',
+                    'Preview': 'Preview destination paths before organizing files.',
+                    'Organize': 'Execute organization using selected strategy and action.',
+                    'Undo': 'Undo the most recent organization operation.',
+                    'Refresh': 'Recompute missing ROMs from current data.',
+                    'Search Archive': 'Open Archive.org search tools for missing entries.',
+                    'Force Identify': 'Move selected unidentified files to identified list.',
+                    'Save Current': 'Save current DATs and scan results as a collection.',
+                    'Load': 'Load this collection into the current session.',
+                    'Remove': 'Remove this item from the current list.',
+                    'Collections': 'Open saved collections manager.',
+                    'DAT Library': 'Open DAT library manager.',
+                    'Cancel': 'Close this dialog without applying changes.',
+                    'Execute': 'Run this action now.',
+                    'Close': 'Close this dialog.'
+                };
+                const tipMapPt = {
+                    'Browse': 'Abre o navegador de arquivos para selecionar um caminho.',
+                    'Add': 'Carrega o caminho do DAT na lista ativa.',
+                    'Scan': 'Inicia o escaneamento de ROMs na pasta selecionada.',
+                    'Preview': 'Mostra destinos antes de organizar os arquivos.',
+                    'Organize': 'Executa a organização com a estratégia e ação escolhidas.',
+                    'Undo': 'Desfaz a operação de organização mais recente.',
+                    'Refresh': 'Recalcula ROMs faltantes com os dados atuais.',
+                    'Search Archive': 'Abre ferramentas de busca no Archive.org.',
+                    'Force Identify': 'Move arquivos não identificados para identificados.',
+                    'Save Current': 'Salva DATs e resultados atuais como coleção.',
+                    'Load': 'Carrega esta coleção na sessão atual.',
+                    'Remove': 'Remove este item da lista atual.',
+                    'Collections': 'Abre o gerenciador de coleções salvas.',
+                    'DAT Library': 'Abre o gerenciador da biblioteca de DAT.',
+                    'Cancel': 'Fecha esta janela sem aplicar alterações.',
+                    'Execute': 'Executa esta ação agora.',
+                    'Close': 'Fecha esta janela.'
+                };
+                const map = isPt ? tipMapPt : tipMapEn;
                 const applyTips = () => {
                     document.querySelectorAll('button').forEach((b) => {
-                        if (!b.title || !b.title.trim()) {
-                            const t = (b.innerText || '').trim();
-                            if (t) b.title = t;
-                        }
+                        const t = (b.innerText || '').trim();
+                        if (map[t]) b.title = map[t];
+                        else if (!b.title || !b.title.trim()) b.title = t || 'Action';
                     });
                 };
                 applyTips();

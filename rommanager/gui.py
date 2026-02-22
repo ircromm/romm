@@ -279,7 +279,7 @@ class ROMManagerGUI:
         self.notebook.add(un_f, text=_tr("tab_unidentified_files"))
         un_tb = ttk.Frame(un_f)
         un_tb.pack(fill=tk.X, pady=(0, 3))
-        ttk.Button(un_tb, text="Force to Identified", command=self._force_identified).pack(side=tk.LEFT)
+        ttk.Button(un_tb, text=_tr("force_to_identified"), command=self._force_identified).pack(side=tk.LEFT)
         self.un_tree = self._make_tree(un_f, UNIDENTIFIED_COLUMNS)
 
         # Missing
@@ -337,14 +337,14 @@ class ROMManagerGUI:
         ttk.Label(orw, text=_tr("output")).pack(side=tk.LEFT)
         self.output_var = tk.StringVar()
         ttk.Entry(orw, textvariable=self.output_var, width=45).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(orw, text="Browse...", command=self._select_output).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Label(orw, text="Action:").pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Button(orw, text=_tr("browse"), command=self._select_output).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(orw, text=f"{_tr('action')}:" ).pack(side=tk.LEFT, padx=(15, 0))
         self.action_var = tk.StringVar(value='copy')
         ttk.Radiobutton(orw, text=_tr("copy_action"), value='copy', variable=self.action_var).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Radiobutton(orw, text=_tr("move_action"), value='move', variable=self.action_var).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(orw, text="Preview", command=self._preview).pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Button(orw, text=_tr("btn_preview"), command=self._preview).pack(side=tk.LEFT, padx=(15, 0))
         ttk.Button(orw, text=_tr("organize_now"), command=self._organize).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(orw, text="Undo", command=self._undo).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(orw, text=_tr("btn_undo"), command=self._undo).pack(side=tk.LEFT, padx=(5, 0))
 
         # Keyboard shortcuts
         self.root.bind('<Control-a>', self._on_select_all)
@@ -391,7 +391,26 @@ class ROMManagerGUI:
             except Exception:
                 text = ""
             if text and child.winfo_class() in {"TButton", "Button", "TCheckbutton", "TRadiobutton", "Label"}:
-                self._tooltips.append(_TkToolTip(child, text))
+                tooltip_map = {
+                    _tr("btn_add_dat"): _tr("tip_add_dat"),
+                    _tr("btn_remove"): _tr("tip_remove_dat"),
+                    _tr("btn_library"): _tr("tip_open_dat_library"),
+                    _tr("btn_select_folder"): _tr("tip_select_rom_folder"),
+                    _tr("btn_scan"): _tr("tip_start_scan"),
+                    _tr("scan_inside_zips"): _tr("tip_scan_archives"),
+                    _tr("recursive"): _tr("tip_recursive_scan"),
+                    "BlindMatch": _tr("tip_blindmatch_toggle"),
+                    _tr("force_to_identified"): _tr("tip_force_identified"),
+                    _tr("refresh"): _tr("tip_refresh_missing"),
+                    _tr("search_archive"): _tr("tip_search_archive"),
+                    _tr("browse"): _tr("tip_select_output_folder"),
+                    _tr("btn_preview"): _tr("tip_preview_organization"),
+                    _tr("organize_now"): _tr("tip_organize_now"),
+                    _tr("btn_undo"): _tr("tip_undo_last"),
+                    _tr("menu_save_collection").replace("...", ""): _tr("tip_save_collection"),
+                    _tr("menu_open_collection").replace("...", ""): _tr("tip_open_collection"),
+                }
+                self._tooltips.append(_TkToolTip(child, tooltip_map.get(text, text)))
             self._apply_auto_tooltips(child)
 
     def _setup_region_tags(self, tree):
@@ -441,7 +460,7 @@ class ROMManagerGUI:
         menu.add_command(label=_tr("copy_action"), command=lambda: self._copy_to_clipboard(tree, item, 'name'))
         menu.add_command(label=_tr("copy_crc32"), command=lambda: self._copy_to_clipboard(tree, item, 'crc'))
         menu.add_separator()
-        menu.add_command(label="Force to Identified", command=lambda: self._force_identified_from_context(tree, item))
+        menu.add_command(label=_tr("force_to_identified"), command=lambda: self._force_identified_from_context(tree, item))
         menu.add_command(label=_tr("search_archive"), command=lambda: self._search_archive_for_item(tree, item))
         menu.add_separator()
         menu.add_command(label=_tr("open_folder"), command=lambda: self._open_rom_folder(tree, item))
@@ -457,7 +476,7 @@ class ROMManagerGUI:
         menu.add_separator()
         menu.add_separator()
         menu.add_command(label=_tr("search_archive"), command=lambda: self._search_archive_for_item(tree, item))
-        menu.add_command(label="Copy to Clipboard", command=lambda: self._copy_to_clipboard(tree, item, 'name'))
+        menu.add_command(label=_tr("copy_to_clipboard"), command=lambda: self._copy_to_clipboard(tree, item, 'name'))
 
         menu.post(event.x_root, event.y_root)
 
@@ -478,7 +497,7 @@ class ROMManagerGUI:
                 try:
                     self.root.clipboard_clear()
                     self.root.clipboard_append(crc_value)
-                    messagebox.showinfo("Copied", f"CRC32 copied: {crc_value}")
+                    messagebox.showinfo(_tr("copied"), _tr("copied_crc", value=crc_value))
                 except:
                     pass
         elif copy_type == 'name':
@@ -487,7 +506,7 @@ class ROMManagerGUI:
             try:
                 self.root.clipboard_clear()
                 self.root.clipboard_append(name_value)
-                messagebox.showinfo("Copied", f"Copied: {name_value}")
+                messagebox.showinfo(_tr("copied"), _tr("copied_name", value=name_value))
             except:
                 pass
 
@@ -1054,7 +1073,7 @@ class ROMManagerGUI:
         self._recent_menu.delete(0, tk.END)
         recent = self.collection_manager.get_recent()
         if not recent:
-            self._recent_menu.add_command(label="(none)", state=tk.DISABLED)
+            self._recent_menu.add_command(label=_tr("none"), state=tk.DISABLED)
             return
         for e in recent[:10]:
             n, p = e.get('name', '?'), e.get('filepath', '')
@@ -1157,7 +1176,7 @@ class ROMManagerGUI:
 
         ttk.Button(br, text=_tr("import_dat"), command=imp).pack(side=tk.LEFT)
         ttk.Button(br, text=_tr("load_selected"), command=load_sel).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(br, text="Remove", command=rem).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(br, text=_tr("btn_remove"), command=rem).pack(side=tk.LEFT, padx=(5, 0))
 
         ttk.Label(win, text=_tr("dat_sources"), font=('Segoe UI', 12, 'bold')).pack(anchor=tk.W, padx=10, pady=(10, 5))
         for s in src.get_sources():
