@@ -1712,7 +1712,7 @@ HTML_TEMPLATE = r'''
                                     { id: 'emulationstation', name: 'EmulationStation', desc: 'ES/RetroPie' },
                                     { id: 'flat', name: 'Flat', desc: 'Renamed only' },
                                 ].map(s => (
-                                    <button key={s.id} onClick={() => setStrategy(s.id)}
+                                    <button key={s.id} onClick={() => setStrategy(s.id)} title={`Use strategy: ${s.name}. ${s.desc}.`}
                                         className={`p-3 rounded-lg border text-left transition ${
                                             strategy === s.id ? 'bg-cyan-900/30 border-cyan-500 text-cyan-300' : 'bg-slate-900/30 border-slate-600 hover:border-slate-500'
                                         }`}>
@@ -1728,32 +1728,32 @@ HTML_TEMPLATE = r'''
                                         <input type="text" value={outputFolder} onChange={e => setOutputFolder(e.target.value)}
                                             placeholder="C:\path\to\output"
                                             className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Browse folder">Browse</button>
+                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Choose the output folder for organized files">Browse</button>
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm text-slate-400 mb-2">Action</label>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setAction('copy')}
+                                        <button onClick={() => setAction('copy')} title="Copy files to output and keep originals"
                                             className={`px-4 py-2 rounded-lg border transition text-sm ${
                                                 action === 'copy' ? 'bg-blue-900/30 border-blue-500 text-blue-300' : 'bg-slate-900/30 border-slate-600'
                                             }`}>Copy</button>
-                                        <button onClick={() => setAction('move')}
+                                        <button onClick={() => setAction('move')} title="Move files to output and remove originals"
                                             className={`px-4 py-2 rounded-lg border transition text-sm ${
                                                 action === 'move' ? 'bg-amber-900/30 border-amber-500 text-amber-300' : 'bg-slate-900/30 border-slate-600'
                                             }`}>Move</button>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={previewOrganize} disabled={results.identified.length === 0}
+                                    <button onClick={previewOrganize} disabled={results.identified.length === 0} title="Show destination preview before organizing"
                                         className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg font-medium transition text-sm">
                                         Preview
                                     </button>
-                                    <button onClick={doOrganize} disabled={results.identified.length === 0}
+                                    <button onClick={doOrganize} disabled={results.identified.length === 0} title="Execute organization now"
                                         className="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 rounded-lg font-medium transition shadow-lg shadow-cyan-900/30 text-sm">
                                         Organize!
                                     </button>
-                                    <button onClick={undoOrganize}
+                                    <button onClick={undoOrganize} title="Undo the most recent organization operation"
                                         className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium transition text-sm">
                                         Undo
                                     </button>

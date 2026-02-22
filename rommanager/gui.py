@@ -404,13 +404,19 @@ class ROMManagerGUI:
                     _tr("refresh"): _tr("tip_refresh_missing"),
                     _tr("search_archive"): _tr("tip_search_archive"),
                     _tr("browse"): _tr("tip_select_output_folder"),
+                    _tr("copy_action"): _tr("tip_action_copy"),
+                    _tr("move_action"): _tr("tip_action_move"),
                     _tr("btn_preview"): _tr("tip_preview_organization"),
                     _tr("organize_now"): _tr("tip_organize_now"),
                     _tr("btn_undo"): _tr("tip_undo_last"),
                     _tr("menu_save_collection").replace("...", ""): _tr("tip_save_collection"),
                     _tr("menu_open_collection").replace("...", ""): _tr("tip_open_collection"),
                 }
-                self._tooltips.append(_TkToolTip(child, tooltip_map.get(text, text)))
+                strategy_names = {s.get("name") for s in STRATEGIES if s.get("name")}
+                tip_text = tooltip_map.get(text)
+                if tip_text is None and text in strategy_names:
+                    tip_text = _tr("tip_choose_strategy")
+                self._tooltips.append(_TkToolTip(child, tip_text or text))
             self._apply_auto_tooltips(child)
 
     def _setup_region_tags(self, tree):
