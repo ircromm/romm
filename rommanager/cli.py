@@ -13,6 +13,7 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
+from .monitor import setup_runtime_monitor, monitor_action
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -152,6 +153,8 @@ Examples:
 
 def run_cli(args=None):
     """Run the CLI"""
+    logger = setup_runtime_monitor()
+    monitor_action("run_cli called", logger=logger)
     parser = create_parser()
     args = parser.parse_args(args)
 

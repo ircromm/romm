@@ -29,6 +29,7 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
+from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor, start_monitored_thread
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
@@ -49,6 +50,8 @@ class ROMManagerGUI:
             raise RuntimeError("tkinter is not available")
 
         self.root = tk.Tk()
+        install_tk_exception_bridge(self.root)
+        monitor_action("tkinter gui opened")
         self.root.title("ROM Collection Manager v2")
         self.root.geometry("1300x850")
         self.root.minsize(1000, 650)
@@ -701,8 +704,7 @@ class ROMManagerGUI:
         self.unidentified.clear()
         for t in [self.id_tree, self.un_tree, self.ms_tree]:
             t.delete(*t.get_children())
-        thread = threading.Thread(target=self._scan_worker, args=(folder,), daemon=True)
-        thread.start()
+        start_monitored_thread(lambda: self._scan_worker(folder), name="tk-scan-worker")
 
     def _scan_worker(self, folder):
         rec = self.recursive_var.get()
@@ -718,8 +720,8 @@ class ROMManagerGUI:
                         self._process(sc)
                 else:
                     self._process(FileScanner.scan_file(fp))
-            except Exception:
-                pass
+            except Exception as exc:
+                monitor_action(f"scan error: {exc}")
             pct = int((i + 1) / total * 100) if total else 0
             self.root.after(0, lambda p=pct, c=i+1, t=total: self._prog(p, c, t))
         self.root.after(0, self._scan_done)
@@ -1342,7 +1344,7 @@ class ROMManagerGUI:
                     win.after(0, lambda: pause_btn.config(state=tk.DISABLED))
                     win.after(0, lambda: cancel_btn.config(state=tk.DISABLED))
 
-            threading.Thread(target=worker, daemon=True).start()
+            start_monitored_thread(worker, name="tk-download-worker")
 
         def pause_download():
             if downloader[0]:
@@ -1537,7 +1539,7 @@ class ROMManagerGUI:
                     error_msg = str(e)
                     win.after(0, lambda: file_count_var.set(f"Error: {error_msg}"))
 
-            threading.Thread(target=worker, daemon=True).start()
+            start_monitored_thread(worker, name="tk-list-files-worker")
 
     
         def download_selected():
@@ -1599,7 +1601,7 @@ class ROMManagerGUI:
                     error_msg = str(e)
                     win.after(0, lambda: dl_status_var.set(f"Error: {error_msg}"))
 
-            threading.Thread(target=worker, daemon=True).start()
+            start_monitored_thread(worker, name="tk-quick-download-worker")
 
     # ── Run ───────────────────────────────────────────────────────
 
@@ -1608,6 +1610,8 @@ class ROMManagerGUI:
 
 
 def run_gui():
+    logger = setup_runtime_monitor()
+    monitor_action("run_gui called", logger=logger)
     if not GUI_AVAILABLE:
         print("Error: tkinter is not available")
         return 1
