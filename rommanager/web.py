@@ -1,5 +1,5 @@
 """
-Web API for R0MM using Flask + embedded React UI (v2)
+Web API for R0MM using Flask + embedded React UI
 Full feature parity with the desktop GUI.
 Includes File Browser API.
 """
@@ -29,6 +29,7 @@ from .dat_sources import DATSourceManager
 from .utils import format_size
 from .blindmatch import build_blindmatch_rom
 from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
+from . import __version__
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
@@ -85,6 +86,26 @@ def restore_web_session() -> None:
 
 
 restore_web_session()
+
+_client_activity = {
+    'seen': False,
+    'last_seen': 0.0,
+}
+_idle_shutdown_started = False
+
+
+def _mark_client_activity() -> None:
+    _client_activity['seen'] = True
+    _client_activity['last_seen'] = time.time()
+
+
+def _idle_shutdown_worker(timeout_seconds: int = 6) -> None:
+    while True:
+        time.sleep(1.0)
+        if not _client_activity['seen']:
+            continue
+        if (time.time() - _client_activity['last_seen']) > timeout_seconds:
+            os._exit(0)
 
 
 # ── Filesystem API ─────────────────────────────────────────────
@@ -183,6 +204,12 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+@app.before_request
+def track_client_activity():
+    if request.path.startswith('/api/'):
+        _mark_client_activity()
+
+
 @app.after_request
 def autosave_session(response):
     if request.method != 'GET' and response.status_code < 400:
@@ -191,6 +218,12 @@ def autosave_session(response):
         except Exception:
             pass
     return response
+
+
+@app.route('/api/heartbeat', methods=['POST'])
+def heartbeat():
+    _mark_client_activity()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/status')
@@ -714,8 +747,6 @@ def get_config():
         'region_colors': REGION_COLORS,
         'default_region_color': DEFAULT_REGION_COLOR,
         'strategies': STRATEGIES,
-        'downloader_available': DOWNLOADER_AVAILABLE,
-        'myrient_available': MYRIENT_AVAILABLE,
     })
 
 
@@ -727,7 +758,7 @@ HTML_TEMPLATE = r'''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>R0MM v2</title>
+    <title>R0MM ver 0.30rc</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -960,6 +991,18 @@ HTML_TEMPLATE = r'''
                 const iv = setInterval(refreshStatus, 2000);
                 return () => clearInterval(iv);
             }, []);
+
+            useEffect(() => {
+                const ping = () => api.post('/api/heartbeat', {});
+                ping();
+                const iv = setInterval(ping, 2000);
+                const onBeforeUnload = () => { navigator.sendBeacon('/api/heartbeat', new Blob([], { type: 'application/json' })); };
+                window.addEventListener('beforeunload', onBeforeUnload);
+                return () => {
+                    clearInterval(iv);
+                    window.removeEventListener('beforeunload', onBeforeUnload);
+                };
+            }, []);
             // set descriptive hover tooltips for button actions
             useEffect(() => {
                 const isPt = (navigator.language || '').toLowerCase().startsWith('pt');
@@ -971,7 +1014,7 @@ HTML_TEMPLATE = r'''
                     'Organize': 'Execute organization using selected strategy and action.',
                     'Undo': 'Undo the most recent organization operation.',
                     'Refresh': 'Recompute missing ROMs from current data.',
-                    'Search Archive': 'Open Archive.org search tools for missing entries.',
+                    'Search': 'Open external search tools for missing entries.',
                     'Force Identify': 'Move selected unidentified files to identified list.',
                     'Save Current': 'Save current DATs and scan results as a collection.',
                     'Load': 'Load this collection into the current session.',
@@ -1487,7 +1530,7 @@ HTML_TEMPLATE = r'''
                                     {!dlActive ? (
                                         <>
                                             <button onClick={() => setShowDownloadDialog(false)} className="px-4 py-2 bg-slate-700 rounded-lg text-sm">Close</button>
-                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download All Missing (removed)</button>
+                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Action unavailable</button>
                                         </>
                                     ) : (
                                         <>
@@ -1508,14 +1551,14 @@ HTML_TEMPLATE = r'''
                                 <div className="text-4xl">&#127918;</div>
                                 <div>
                                     <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">R0MM</h1>
-                                    <p className="text-slate-400">v2 &mdash; Multi-DAT, Collections, Missing ROMs</p>
+                                    <p className="text-slate-400">ver 0.30rc &mdash; Multi-DAT, Collections, Missing ROMs</p>
                                 </div>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={newSession} className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm">Nova sessão</button>
                                 <button onClick={openCollections} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Collections</button>
                                 <button onClick={openDatLibrary} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">DAT Library</button>
-                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Myrient Browser (removed)</button>
+                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Online Browser (disabled)</button>
                             </div>
                         </div>
 
@@ -1835,7 +1878,7 @@ HTML_TEMPLATE = r'''
                         </div>
 
                         <p className="text-center text-slate-500 text-sm">
-                            R0MM v2 &mdash; Supports No-Intro, Redump, TOSEC and any XML-based DAT files
+                            R0MM ver 0.30rc &mdash; Supports No-Intro, Redump, TOSEC and any XML-based DAT files
                         </p>
                     </div>
                 </div>
@@ -1850,14 +1893,20 @@ HTML_TEMPLATE = r'''
 '''
 
 
-def run_server(host='127.0.0.1', port=5000, debug=False):
+def run_server(host='127.0.0.1', port=5000, debug=False, shutdown_on_idle=False):
     """Run the web server"""
+    global _idle_shutdown_started
     apply_runtime_settings(load_settings())
     logger = setup_runtime_monitor()
     monitor_action(f"run_server called: host={host} port={port} debug={debug}", logger=logger)
-    print(f"R0MM v2 - Web Interface")
+    print(f"R0MM ver {__version__} - Web Interface")
     print(f"=" * 50)
     print(f"Open in your browser: http://{host}:{port}")
     print(f"Press Ctrl+C to stop")
     print()
+
+    if shutdown_on_idle and not _idle_shutdown_started:
+        threading.Thread(target=_idle_shutdown_worker, daemon=True).start()
+        _idle_shutdown_started = True
+
     app.run(host=host, port=port, debug=debug, threaded=True)

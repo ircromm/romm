@@ -36,7 +36,6 @@ from .shared_config import (
     IMPORTED_DATS_DIR,
     IMPORTED_COLLECTIONS_DIR,
     IMPORTED_ROMS_DIR,
-    IMPORTED_DOWNLOADS_DIR,
     ensure_app_directories,
 )
 from .blindmatch import build_blindmatch_rom
@@ -96,9 +95,6 @@ def _copy_collection_to_local_cache(source_path: str) -> str:
 def _copy_rom_to_local_cache(source_path: str) -> str:
     return _copy_into_app_storage(source_path, IMPORTED_ROMS_DIR)
 
-
-def _copy_download_to_local_cache(source_path: str) -> str:
-    return _copy_into_app_storage(source_path, IMPORTED_DOWNLOADS_DIR)
 
 
 SESSION_EXPORTS_DIR = os.path.join(APP_DATA_DIR, "sessions")
@@ -740,7 +736,7 @@ class ImportScanView(ft.Column):
 
             # DAT Sources
             ft.Text(_tr("dat_sources"), size=16, weight=ft.FontWeight.W_600, color=MOCHA["text"]),
-            ft.Text("Download DAT files from these trusted sources.", size=12, color=MOCHA["subtext0"]),
+            ft.Text("Official DAT provider links.", size=12, color=MOCHA["subtext0"]),
             ft.Container(height=6),
             _card_container(ft.Column(controls=source_items, spacing=6)),
 
@@ -1312,7 +1308,6 @@ class MyrientView(ft.Column):
 
         self.controls.extend([
             ft.Row(controls=[
-                ft.Icon(ft.Icons.CLOUD_DOWNLOAD_OUTLINED, size=28, color=MOCHA["mauve"]),
                 ft.Text("Myrient Browser", size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
             ], spacing=12),
             ft.Container(height=10),
@@ -1757,10 +1752,9 @@ def main(page: ft.Page):
     import_scan_view = ImportScanView(state, page, on_scan_complete=lambda: switch_view(nav_rail.selected_index))
     tools_logs_view = ToolsLogsView(state, page)
     missing_view = MissingReportsView(state, page)
-    myrient_view = MyrientView(state, page)
     settings_view = SettingsView(state, page)
 
-    views = [dashboard_view, library_view, import_scan_view, tools_logs_view, missing_view, myrient_view, settings_view]
+    views = [dashboard_view, library_view, import_scan_view, tools_logs_view, missing_view, settings_view]
 
     def switch_view(index: int):
         view = views[index]
@@ -1809,7 +1803,6 @@ def main(page: ft.Page):
             ft.NavigationRailDestination(icon=ft.Icons.UPLOAD_FILE_OUTLINED, selected_icon=ft.Icons.UPLOAD_FILE, label=_tr("flet_nav_import")),
             ft.NavigationRailDestination(icon=ft.Icons.BUILD_OUTLINED, selected_icon=ft.Icons.BUILD, label=_tr("flet_nav_tools")),
             ft.NavigationRailDestination(icon=ft.Icons.ASSIGNMENT_OUTLINED, selected_icon=ft.Icons.ASSIGNMENT, label=_tr("tab_missing")),
-            ft.NavigationRailDestination(icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED, selected_icon=ft.Icons.CLOUD_DOWNLOAD, label="Myrient"),
             ft.NavigationRailDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label=_tr("menu_settings")),
         ],
         on_change=lambda e: navigate(e.control.selected_index),

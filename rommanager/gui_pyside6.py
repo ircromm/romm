@@ -16,7 +16,9 @@ from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
 from .shared_config import STRATEGIES
+from .blindmatch import build_blindmatch_rom
 from . import i18n as _i18n
+from . import __version__
 
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
@@ -75,7 +77,7 @@ def run_pyside6_gui() -> int:
     class PySideROMManager(QMainWindow):
         def __init__(self):
             super().__init__()
-            self.setWindowTitle("R0MM Desktop (PySide6)")
+            self.setWindowTitle(f"R0MM {__version__} (PySide6)")
             self.resize(1320, 860)
 
             self.matcher = MultiROMMatcher()
@@ -153,7 +155,7 @@ def run_pyside6_gui() -> int:
             scan_folder_btn.clicked.connect(self._scan_folder)
             dat_controls.addWidget(scan_folder_btn)
 
-            force_match_btn = QPushButton("BlindMatch selected unidentified")
+            force_match_btn = QPushButton("BlindMatch (best effort)")
             force_match_btn.clicked.connect(self._blindmatch_selected)
             dat_controls.addWidget(force_match_btn)
             dat_controls.addStretch(1)
@@ -334,34 +336,35 @@ def run_pyside6_gui() -> int:
                 self.statusBar().clearMessage()
 
         def _blindmatch_selected(self):
-            selected = self.unidentified_table.selectionModel().selectedRows()
-            if not selected:
-                QMessageBox.information(self, "BlindMatch", "Select at least one unidentified row.")
-                return
-            dats = self.matcher.get_dat_list()
-            if not dats:
-                QMessageBox.warning(self, "BlindMatch", "Load at least one DAT first.")
-                return
-            dat_names = [d.name for d in dats]
-            dat_name, ok = QInputDialog.getItem(self, "BlindMatch", "Target DAT:", dat_names, 0, False)
+            system_name, ok = QInputDialog.getText(self, "BlindMatch", "System name:")
             if not ok:
                 return
-            target = next((d for d in dats if d.name == dat_name), None)
-            if target is None:
+            system_name = (system_name or "").strip()
+            if not system_name:
+                QMessageBox.warning(self, "BlindMatch", "Please inform a valid system name.")
                 return
-            for index in selected:
-                scanned = self.unidentified[index.row()]
-                # best effort: first ROM from selected DAT
-                roms = self.matcher.all_roms.get(target.id, [])
-                if not roms:
-                    continue
-                scanned.matched_rom = roms[0]
-                scanned.forced = True
-                self.identified.append(scanned)
-            keep = {id(s) for s in self.identified}
-            self.unidentified = [u for u in self.unidentified if id(u) not in keep]
-            self._log(f"BlindMatch applied to {len(selected)} item(s)")
-            self._refresh_all()
+
+            folder = QFileDialog.getExistingDirectory(self, "Select ROM folder for BlindMatch")
+            if not folder:
+                return
+
+            self.statusBar().showMessage("BlindMatch scanning...")
+            QApplication.processEvents()
+            try:
+                scanned_files = FileScanner.scan_folder(folder, recursive=True, scan_archives=True)
+                matched_count = 0
+                for scanned in scanned_files:
+                    scanned.matched_rom = build_blindmatch_rom(scanned, system_name)
+                    scanned.forced = True
+                    self.identified.append(scanned)
+                    matched_count += 1
+                self.scanned_files.extend(scanned_files)
+                self._log(f"BlindMatch completed: {matched_count} item(s) for system '{system_name}'")
+                self._refresh_all()
+            except Exception as exc:
+                QMessageBox.critical(self, "BlindMatch error", str(exc))
+            finally:
+                self.statusBar().clearMessage()
 
         def _choose_output_folder(self):
             folder = QFileDialog.getExistingDirectory(self, "Output folder")

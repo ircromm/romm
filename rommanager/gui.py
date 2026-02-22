@@ -100,7 +100,7 @@ class ROMManagerGUI:
         self.root = tk.Tk()
         install_tk_exception_bridge(self.root)
         monitor_action("tkinter gui opened")
-        self.root.title(f"{_tr('title_main')} v2")
+        self.root.title(f"{_tr('title_main')} ver {__version__}")
         self.root.geometry("1300x850")
         self.root.minsize(1000, 650)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1192,7 +1192,7 @@ class ROMManagerGUI:
 
     def _show_about(self):
         """Show about dialog"""
-        messagebox.showinfo(_tr("about_title"), "R0MM v2\n\n"
+        messagebox.showinfo(_tr("about_title"), f"R0MM ver {__version__}\n\n"
                             "A web-based ROM collection organizer\n"
                             "with Windows Explorer-like interface.\n\n"
                             "© 2025")

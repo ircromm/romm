@@ -18,6 +18,7 @@ from .blindmatch import build_blindmatch_rom
 from .settings import load_settings, get_effective_profile, apply_runtime_settings
 from .health import run_health_checks
 from .metadata import MetadataStore
+from . import __version__
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -172,7 +173,7 @@ Examples:
     parser.add_argument(
         '--version', '-v',
         action='version',
-        version='%(prog)s 2.0.0'
+        version=f'%(prog)s {__version__}'
     )
 
     return parser
