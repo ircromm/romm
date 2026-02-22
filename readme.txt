@@ -1,4 +1,4 @@
-# ROM Collection Manager v2
+# R0MM v2
 
 Web-Based ROM Organization System
 
@@ -6,7 +6,7 @@ Web-Based ROM Organization System
 
 ## 1. Overview
 
-ROM Collection Manager v2 is a **web application** for scanning, identifying, analyzing, and organizing ROM collections using XML-based DAT files.
+R0MM v2 is a **web application** for scanning, identifying, analyzing, and organizing ROM collections using XML-based DAT files.
 
 It supports:
 
@@ -38,7 +38,6 @@ Core modules identified in the project:
 * `parser` – DAT XML parsing
 * `scanner` – filesystem ROM scanning + hashing
 * `matcher` – ROM ↔ DAT matching logic
-* `downloader` – DAT download support
 * `utils` – helpers
 * `shared_config` – configuration layer
 * `router` – API endpoints
@@ -275,7 +274,7 @@ Designed for users who:
 Displayed in footer:
 
 ```
-ROM Collection Manager v2
+R0MM v2
 ```
 
 Indicates this is a second-generation web-based rewrite, likely replacing a previous CLI or desktop version.
@@ -284,7 +283,7 @@ Indicates this is a second-generation web-based rewrite, likely replacing a prev
 
 ## 11. Summary
 
-ROM Collection Manager v2 is a local web application that:
+R0MM v2 is a local web application that:
 
 * Parses DAT files
 * Scans ROM collections
@@ -299,43 +298,65 @@ It is a full-stack ROM management tool intended for structured archival organiza
 
 ---
 
-## 12. Download Engine
+## 12. Direct Download Features
 
-The application downloads ROMs from Myrient (myrient.erista.me) sequentially, one file at a time — matching how a browser downloads files.
+Direct ROM download/search features were removed from the application.
 
-### Key features:
+The app now focuses on:
+- DAT parsing and validation
+- ROM scanning and matching
+- Organization and reporting
 
-* Single-file sequential downloads (full bandwidth per file)
-* Configurable delay between downloads (0-60 seconds, default: 5s)
-* Streaming CRC32 verification during download
-* Connection pooling with keep-alive for performance
-* Pause, resume, and cancel controls
-* Automatic retry with exponential backoff
 
-### Configuring download delay:
+## 13. Language Selection
 
-CLI:
-  python main.py --dat nointro.dat --roms ./roms --download-delay 10
+The app now includes a language selector in desktop menus:
+- **English** (default)
+- **Português Brasileiro**
 
-GUI:
-  Downloads > Download Missing ROMs > "Delay between downloads" spinbox
+Where to change:
+- Launcher window: `Language` menu
+- Tkinter desktop app: `Language` menu
+- Flet desktop app: language dropdown in the left navigation panel
 
-Web:
-  Download dialog > "Delay between downloads" input field
+Default language at startup is **English**.
 
-The delay is a courtesy wait between file completions. During each individual download, the connection runs at full speed with no throttling.
+Module entry behavior:
+- `python -m rommanager` always opens the visual mode selector (launcher).
 
----
 
-## 13. Myrient System Catalog
+## 14. BlindMatch mode
 
-The downloader includes a built-in catalog of ~50 systems mapped to their Myrient URLs, covering:
+BlindMatch allows scanning without any DAT file.
 
-* Nintendo (NES, SNES, N64, GB, GBA, DS, 3DS, GameCube, Wii, Wii U)
-* Sony (PS1, PS2, PS3, PSP, Vita)
-* Sega (Master System, Genesis, Saturn, Dreamcast, Game Gear, 32X)
-* Microsoft (Xbox, Xbox 360)
-* Atari (2600, 5200, 7800, Jaguar, Lynx, ST)
-* NEC (PC Engine, SuperGrafx, PC Engine CD, PC-FX)
-* SNK (Neo Geo Pocket, Neo Geo CD)
-* And many more (Commodore, Bandai, Coleco, Panasonic, Sharp, etc.)
+How it works (best effort):
+- User provides the system name (for example: SNES).
+- The app infers region from filename tokens such as `(U)`, `US`, `(E)`, `(J)`, `BR`, etc.
+- All scanned files are treated as identified in this mode.
+- There are no "missing ROMs" and no "unidentified" results in BlindMatch mode.
+
+Available in:
+- CLI: `--blindmatch-system <SYSTEM>`
+- Web UI: BlindMatch system field in scan section
+- Tkinter UI: BlindMatch toggle + system input
+- Flet UI: BlindMatch toggle + system input
+
+## 15. Advanced Settings foundation
+
+R0MM now includes a shared settings foundation (`~/.rommanager/settings.json`) used by CLI, Tkinter, Flet and Web runtime initialization.
+
+Implemented foundations:
+- Collection profiles by objective: historical_preservation, mister_playset, retroarch_frontend, full_set_no_hacks.
+- Region/variant policy (global + per-system priority).
+- Naming template engine for organized output (`{name}`, `{game}`, `{region}`, `{system}`, `{crc}`).
+- Optional curated metadata database support (CLI: `--metadata-db`).
+- Audit trail logging for organization actions (`~/.rommanager/logs/audit.log`).
+- Collection health checks (duplicates, unknown extension, missing/zero files) via CLI `--health-check`.
+- Museum organization strategy (`museum`) for generation/system/region hierarchy.
+- Accessibility settings placeholders (font scale, high contrast, dense tables, reduced motion).
+
+CLI additions:
+- `--settings-file <path>`
+- `--profile <preset_name>`
+- `--health-check`
+- `--metadata-db <path>`
