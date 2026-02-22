@@ -1,6 +1,4 @@
-"""
-Entry point for running as module: python -m rommanager
-"""
+"""Entry point for running as module: python -m rommanager"""
 
 import sys
 
