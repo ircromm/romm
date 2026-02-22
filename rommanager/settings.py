@@ -122,8 +122,13 @@ def get_effective_profile(settings: Dict[str, Any], profile_name: str | None = N
 def apply_runtime_settings(settings: Dict[str, Any], profile_name: str | None = None) -> Dict[str, Any]:
     """Apply settings to runtime subsystems (organizer/matcher policies)."""
     from .organizer import configure_selection_policy, configure_naming, configure_audit
+    from . import i18n as _i18n
 
     profile = get_effective_profile(settings, profile_name)
+    lang = settings.get("language", "en")
+    setter = getattr(_i18n, "set_language", None)
+    if callable(setter):
+        setter(lang)
     configure_selection_policy({
         "global_priority": profile.get("region_priority") or settings.get("region_policy", {}).get("global_priority", []),
         "per_system": settings.get("region_policy", {}).get("per_system", {}),
@@ -136,3 +141,12 @@ def apply_runtime_settings(settings: Dict[str, Any], profile_name: str | None = 
     )
     configure_audit(settings.get("audit", {}).get("path"), settings.get("audit", {}).get("enabled", True))
     return profile
+
+
+def set_persisted_language(language: str, path: str = DEFAULT_SETTINGS_PATH) -> Dict[str, Any]:
+    """Persist language choice and apply runtime settings immediately."""
+    settings = load_settings(path)
+    settings["language"] = language
+    save_settings(settings, path)
+    apply_runtime_settings(settings)
+    return settings

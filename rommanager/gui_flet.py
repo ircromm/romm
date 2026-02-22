@@ -20,7 +20,7 @@ from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
 from . import i18n as _i18n
-from .settings import load_settings, apply_runtime_settings
+from .settings import load_settings, apply_runtime_settings, set_persisted_language
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -37,6 +37,7 @@ def _set_language(lang):
     func = getattr(_i18n, "set_language", None)
     if callable(func):
         func(lang)
+    set_persisted_language(lang)
 
 
 def _safe_get_language():
@@ -1267,11 +1268,44 @@ def main(page: ft.Page):
         content_area.content = view
         content_area.update()
 
+    lang_switch = ft.Switch(
+        label="PT-BR",
+        value=_safe_get_language() == LANG_PT_BR,
+        label_text_style=ft.TextStyle(color=MOCHA["text"], size=11),
+    )
+
+    def _apply_language_refresh(lang: str):
+        _set_language(lang)
+        page.title = f"{_tr('flet_brand')} - {_tr('title_main')}"
+        current = nav_rail.selected_index
+
+        nav_rail.destinations = [
+            ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD_OUTLINED, selected_icon=ft.Icons.DASHBOARD, label=_tr("flet_nav_dashboard")),
+            ft.NavigationRailDestination(icon=ft.Icons.GRID_VIEW_OUTLINED, selected_icon=ft.Icons.GRID_VIEW, label=_tr("flet_nav_library")),
+            ft.NavigationRailDestination(icon=ft.Icons.UPLOAD_FILE_OUTLINED, selected_icon=ft.Icons.UPLOAD_FILE, label=_tr("flet_nav_import")),
+            ft.NavigationRailDestination(icon=ft.Icons.BUILD_OUTLINED, selected_icon=ft.Icons.BUILD, label=_tr("flet_nav_tools")),
+        ]
+
+        nonlocal dashboard_view, library_view, import_scan_view, tools_logs_view, views
+        dashboard_view = DashboardView(state, page, navigate)
+        library_view = LibraryView(state, page, navigate)
+        import_scan_view = ImportScanView(state, page, on_scan_complete=lambda: switch_view(nav_rail.selected_index))
+        tools_logs_view = ToolsLogsView(state, page)
+        views = [dashboard_view, library_view, import_scan_view, tools_logs_view]
+
+        brand_col = nav_rail.leading.content
+        brand_col.controls[1].value = _tr("flet_brand")
+        lang_switch.value = (lang == LANG_PT_BR)
+        switch_view(current)
+        page.update()
+
+    lang_switch.on_change = lambda e: _apply_language_refresh(LANG_PT_BR if e.control.value else LANG_EN)
+
     nav_rail = ft.NavigationRail(
         selected_index=0,
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=80,
-        min_extended_width=200,
+        min_extended_width=220,
         bgcolor=MOCHA["mantle"],
         indicator_color=MOCHA["surface1"],
         leading=ft.Container(
@@ -1279,12 +1313,13 @@ def main(page: ft.Page):
                 controls=[
                     ft.Icon(ft.Icons.SPORTS_ESPORTS, size=32, color=MOCHA["mauve"]),
                     ft.Text(_tr("flet_brand"), size=11, weight=ft.FontWeight.BOLD, color=MOCHA["mauve"]),
-                    ft.Dropdown(
-                        width=150,
-                        value=_safe_get_language(),
-                        options=[ft.dropdown.Option(LANG_EN, _tr("language_english")), ft.dropdown.Option(LANG_PT_BR, _tr("language_ptbr"))],
-                        on_change=lambda e: (_set_language(e.control.value), page.clean(), main(page)),
-                        text_size=11,
+                    ft.Row(
+                        controls=[
+                            ft.Text(_tr("language_english"), size=10, color=MOCHA["subtext0"]),
+                            lang_switch,
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,

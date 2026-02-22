@@ -9,7 +9,7 @@ from .web import run_server
 from .gui import run_gui, GUI_AVAILABLE
 from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor
 from . import i18n as _i18n
-from .settings import load_settings, apply_runtime_settings
+from .settings import load_settings, apply_runtime_settings, set_persisted_language
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -26,6 +26,7 @@ def _set_language(lang):
     func = getattr(_i18n, "set_language", None)
     if callable(func):
         func(lang)
+    set_persisted_language(lang)
 
 
 def _safe_get_language():
