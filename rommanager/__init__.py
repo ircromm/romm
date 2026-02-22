@@ -19,10 +19,6 @@ from .utils import format_size, truncate_string, safe_filename
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 
-try:
-    from .myrient_downloader import MyrientDownloader
-except ImportError:
-    pass
 
 __all__ = [
     'ROMInfo',
@@ -43,7 +39,6 @@ __all__ = [
     'format_size',
     'truncate_string',
     'safe_filename',
-    'MyrientDownloader',
 ]
 
 def run_web(host='127.0.0.1', port=5000):
