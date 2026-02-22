@@ -65,5 +65,25 @@ _PROJECT_DIR = os.path.dirname(_PACKAGE_DIR)          # D:\1 romorg
 APP_DATA_DIR = os.path.join(_PROJECT_DIR, 'data')
 COLLECTIONS_DIR = os.path.join(APP_DATA_DIR, 'collections')
 DATS_DIR = os.path.join(APP_DATA_DIR, 'dats')
+IMPORTS_DIR = os.path.join(APP_DATA_DIR, 'imports')
+IMPORTED_DATS_DIR = os.path.join(IMPORTS_DIR, 'dats')
+IMPORTED_COLLECTIONS_DIR = os.path.join(IMPORTS_DIR, 'collections')
+SESSION_CACHE_DIR = os.path.join(APP_DATA_DIR, 'cache')
+EXPORTS_DIR = os.path.join(APP_DATA_DIR, 'exports')
 DAT_INDEX_FILE = os.path.join(APP_DATA_DIR, 'dat_index.json')
 RECENT_FILE = os.path.join(APP_DATA_DIR, 'recent.json')
+
+
+def ensure_app_directories() -> None:
+    """Create required app-local directories at startup."""
+    for path in (
+        APP_DATA_DIR,
+        COLLECTIONS_DIR,
+        DATS_DIR,
+        IMPORTS_DIR,
+        IMPORTED_DATS_DIR,
+        IMPORTED_COLLECTIONS_DIR,
+        SESSION_CACHE_DIR,
+        EXPORTS_DIR,
+    ):
+        os.makedirs(path, exist_ok=True)
