@@ -32,6 +32,7 @@ from .utils import format_size
 from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor, start_monitored_thread
 from . import i18n as _i18n
 from .settings import load_settings, apply_runtime_settings
+from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
@@ -102,6 +103,7 @@ class ROMManagerGUI:
         self.root.title(f"{_tr('title_main')} v2")
         self.root.geometry("1300x850")
         self.root.minsize(1000, 650)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Data
         self.multi_matcher = MultiROMMatcher()
@@ -129,6 +131,12 @@ class ROMManagerGUI:
         self._build_menu()
         self._build_ui()
         self._apply_auto_tooltips()
+        self._restore_session()
+        self._refresh_dats()
+        self._refill_id()
+        self._refill_un()
+        self._refresh_missing()
+        self._update_stats()
 
     # ── Theme ─────────────────────────────────────────────────────
 
@@ -203,7 +211,10 @@ class ROMManagerGUI:
         main.pack(fill=tk.BOTH, expand=True)
 
         # Header
-        ttk.Label(main, text=_tr("title_main"), style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
+        header = ttk.Frame(main)
+        header.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(header, text=_tr("title_main"), style='Header.TLabel').pack(side=tk.LEFT, anchor=tk.W)
+        ttk.Button(header, text="Nova sessão", command=self._new_session).pack(side=tk.RIGHT)
 
         # Top: DATs + Scan
         top = ttk.Frame(main)
@@ -742,6 +753,7 @@ class ROMManagerGUI:
             di, roms = DATParser.parse_with_info(fp)
             self.multi_matcher.add_dat(di, roms)
             self._refresh_dats()
+            self._persist_session()
             messagebox.showinfo("Loaded", f"{di.system_name}\n{di.rom_count:,} ROMs")
         except Exception as e:
             messagebox.showerror(_tr("error"), f"Failed:\n{e}")
@@ -846,6 +858,7 @@ class ROMManagerGUI:
         self.progress_var.set("Scan complete!")
         self._update_stats()
         self._refresh_missing()
+        self._persist_session()
         messagebox.showinfo(_tr("done"), f"Scanned {len(self.scanned_files):,}\n"
                             f"Identified: {len(self.identified):,}\nUnidentified: {len(self.unidentified):,}")
 
@@ -1035,6 +1048,7 @@ class ROMManagerGUI:
         )
         fp = self.collection_manager.save(coll)
         self._refresh_recent_menu()
+        self._persist_session()
         messagebox.showinfo("Saved", f"Collection saved:\n{fp}")
 
     def _open_collection(self):
@@ -1075,6 +1089,7 @@ class ROMManagerGUI:
         if s.get('output'):
             self.output_var.set(s['output'])
         self._refresh_recent_menu()
+        self._persist_session()
         messagebox.showinfo("Loaded", f"Collection '{coll.name}' loaded")
 
     def _refresh_recent_menu(self):
@@ -1202,6 +1217,59 @@ class ROMManagerGUI:
         self.root.destroy()
         app = ROMManagerGUI()
         app.run()
+
+    def _persist_session(self):
+        snapshot = build_snapshot(
+            dats=self.multi_matcher.get_dat_list(),
+            identified=self.identified,
+            unidentified=self.unidentified,
+            extras={
+                "blindmatch_mode": bool(self.blindmatch_var.get()),
+                "blindmatch_system": self.blindmatch_system_var.get().strip(),
+                "scan_path": self.scan_path_var.get(),
+                "output_path": self.output_var.get(),
+            },
+        )
+        save_snapshot(snapshot)
+
+    def _restore_session(self):
+        snap = load_snapshot()
+        if not snap:
+            return
+        restore_into_matcher(self.multi_matcher, snap)
+        self.identified, self.unidentified = restore_scanned(snap)
+        extras = snap.get("extras", {})
+        self.blindmatch_var.set(bool(extras.get("blindmatch_mode", False)))
+        self.blindmatch_system_var.set(extras.get("blindmatch_system", ""))
+        scan_path = extras.get("scan_path")
+        if scan_path and scan_path != _tr("no_folder_selected"):
+            self.scan_path_var.set(scan_path)
+        self.output_var.set(extras.get("output_path", ""))
+
+    def _on_close(self):
+        self._persist_session()
+        self.root.destroy()
+
+    def _new_session(self):
+        save_first = messagebox.askyesnocancel("Nova sessão", "Deseja salvar a sessão atual antes de reiniciar?")
+        if save_first is None:
+            return
+        if save_first:
+            self._save_collection()
+        self.multi_matcher = MultiROMMatcher()
+        self.identified = []
+        self.unidentified = []
+        self.scan_path_var.set(_tr("no_folder_selected"))
+        self.output_var.set("")
+        self.blindmatch_var.set(False)
+        self.blindmatch_system_var.set("")
+        self._refresh_dats()
+        self._refill_id()
+        self._refill_un()
+        self._refresh_missing()
+        self._update_stats()
+        self.notebook.select(0)
+        self._persist_session()
 
     # ── Run ───────────────────────────────────────────────────────
 

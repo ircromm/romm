@@ -28,6 +28,7 @@ from .dat_library import DATLibrary
 from .dat_sources import DATSourceManager
 from .utils import format_size
 from .blindmatch import build_blindmatch_rom
+from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
@@ -57,6 +58,33 @@ state = {
     'blindmatch_system': '',
     'settings': load_settings(),
 }
+
+
+def persist_web_session() -> None:
+    snapshot = build_snapshot(
+        dats=state['multi_matcher'].get_dat_list(),
+        identified=state['identified'],
+        unidentified=state['unidentified'],
+        extras={
+            'blindmatch_mode': state.get('blindmatch_mode', False),
+            'blindmatch_system': state.get('blindmatch_system', ''),
+        },
+    )
+    save_snapshot(snapshot)
+
+
+def restore_web_session() -> None:
+    snap = load_snapshot()
+    if not snap:
+        return
+    restore_into_matcher(state['multi_matcher'], snap)
+    state['identified'], state['unidentified'] = restore_scanned(snap)
+    extras = snap.get('extras', {})
+    state['blindmatch_mode'] = bool(extras.get('blindmatch_mode', False))
+    state['blindmatch_system'] = extras.get('blindmatch_system', '')
+
+
+restore_web_session()
 
 
 # ── Filesystem API ─────────────────────────────────────────────
@@ -155,6 +183,16 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+@app.after_request
+def autosave_session(response):
+    if request.method != 'GET' and response.status_code < 400:
+        try:
+            persist_web_session()
+        except Exception:
+            pass
+    return response
+
+
 @app.route('/api/status')
 def get_status():
     mm = state['multi_matcher']
@@ -170,6 +208,20 @@ def get_status():
         'scan_total': state['scan_total'],
         'blindmatch_mode': state.get('blindmatch_mode', False),
     })
+
+
+@app.route('/api/new-session', methods=['POST'])
+def new_session():
+    state['multi_matcher'] = MultiROMMatcher()
+    state['identified'] = []
+    state['unidentified'] = []
+    state['scanning'] = False
+    state['scan_progress'] = 0
+    state['scan_total'] = 0
+    state['blindmatch_mode'] = False
+    state['blindmatch_system'] = ''
+    persist_web_session()
+    return jsonify({'ok': True})
 
 
 # ── Multi-DAT endpoints ───────────────────────────────────────
@@ -1040,6 +1092,24 @@ HTML_TEMPLATE = r'''
                 }
             };
 
+            const newSession = async () => {
+                const shouldSave = window.confirm('Deseja salvar a sessão atual antes de iniciar uma nova sessão?');
+                if (shouldSave) {
+                    const name = prompt('Nome da coleção para salvar:', `autosave-${Date.now()}`);
+                    if (name) {
+                        const saved = await api.post('/api/collection/save', { name });
+                        if (saved.error) return notify('error', saved.error);
+                    }
+                }
+                const res = await api.post('/api/new-session', {});
+                if (res.error) notify('error', res.error);
+                else {
+                    setActiveTab('identified');
+                    notify('success', 'Nova sessão iniciada');
+                    refreshStatus(); refreshResults(); refreshMissing();
+                }
+            };
+
             const openCollections = async () => {
                 const res = await api.get('/api/collection/list');
                 setCollections(res.collections || []);
@@ -1442,6 +1512,7 @@ HTML_TEMPLATE = r'''
                                 </div>
                             </div>
                             <div className="flex gap-2">
+                                <button onClick={newSession} className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm">Nova sessão</button>
                                 <button onClick={openCollections} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Collections</button>
                                 <button onClick={openDatLibrary} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">DAT Library</button>
                                 <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Myrient Browser (removed)</button>
