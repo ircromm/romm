@@ -55,6 +55,7 @@ STRATEGIES = [
     {'id': 'alphabetical',     'name': 'Alphabetical',    'desc': 'A-Z folders'},
     {'id': 'emulationstation', 'name': 'EmulationStation', 'desc': 'ES/RetroPie compatible'},
     {'id': 'flat',             'name': 'Flat',            'desc': 'Renamed only'},
+    {'id': 'museum',           'name': 'Museum',          'desc': 'Generation/System/Region curation'},
 ]
 
 # App data directory — portable: everything stays inside the project folder

@@ -8,9 +8,73 @@ import shutil
 import zipfile
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Dict, List, Optional, Callable
+import json
+from typing import Dict, List, Optional, Callable, Any
 
 from .models import ScannedFile, ROMInfo, OrganizationAction, PlannedAction, OrganizationPlan
+
+_SELECTION_POLICY: Dict[str, Any] = {
+    "global_priority": [
+        "USA", "World", "Europe", "Japan", "Brazil", "Korea", "China",
+        "Germany", "France", "Spain", "Italy", "Australia", "Asia",
+        "Netherlands", "Sweden", "Russia", "Unknown"
+    ],
+    "per_system": {},
+    "allow_tags": [],
+    "exclude_tags": [],
+}
+
+_NAMING_TEMPLATE = "{name}"
+_KEEP_NAME_TAGS = True
+_AUDIT_PATH = os.path.expanduser("~/.rommanager/logs/audit.log")
+_AUDIT_ENABLED = True
+
+
+def configure_selection_policy(policy: Dict[str, Any] | None):
+    global _SELECTION_POLICY
+    if policy:
+        _SELECTION_POLICY.update({k: v for k, v in policy.items() if v is not None})
+
+
+def configure_naming(template: str | None = None, keep_tags: bool | None = None):
+    global _NAMING_TEMPLATE, _KEEP_NAME_TAGS
+    if template:
+        _NAMING_TEMPLATE = template
+    if keep_tags is not None:
+        _KEEP_NAME_TAGS = bool(keep_tags)
+
+
+def configure_audit(path: str | None = None, enabled: bool | None = None):
+    global _AUDIT_PATH, _AUDIT_ENABLED
+    if path:
+        _AUDIT_PATH = path
+    if enabled is not None:
+        _AUDIT_ENABLED = bool(enabled)
+
+
+def _strip_tags(name: str) -> str:
+    name = re.sub(r"\s*\([^)]*\)", "", name)
+    name = re.sub(r"\s*\[[^\]]*\]", "", name)
+    return re.sub(r"\s{2,}", " ", name).strip()
+
+
+def render_name_template(scanned: ScannedFile) -> str:
+    rom = scanned.matched_rom
+    raw_name = rom.name if rom else scanned.filename
+    game = (rom.game_name if rom and rom.game_name else os.path.splitext(scanned.filename)[0])
+    if not _KEEP_NAME_TAGS:
+        game = _strip_tags(game)
+    values = {
+        "name": raw_name,
+        "game": game,
+        "region": (rom.region if rom else "Unknown"),
+        "system": (rom.system_name if rom else "Unknown"),
+        "crc": (rom.crc32 if rom else scanned.crc32),
+    }
+    try:
+        return _NAMING_TEMPLATE.format(**values)
+    except Exception:
+        return raw_name
 
 
 # ── Strategy Pattern ──────────────────────────────────────────────
@@ -30,11 +94,6 @@ class OrganizationStrategy(ABC):
 class OneGameOneROMStrategy(OrganizationStrategy):
     """Keep best version per game based on region priority."""
 
-    REGION_PRIORITY = [
-        'USA', 'World', 'Europe', 'Japan', 'Brazil', 'Korea', 'China',
-        'Germany', 'France', 'Spain', 'Italy', 'Australia', 'Asia',
-        'Netherlands', 'Sweden', 'Russia', 'Unknown'
-    ]
 
     def get_relative_path(self, scanned: ScannedFile) -> str:
         rom = scanned.matched_rom
@@ -52,7 +111,8 @@ class OneGameOneROMStrategy(OrganizationStrategy):
         selected = []
         for versions in games.values():
             best = min(versions, key=lambda x: self._get_priority(
-                x.matched_rom.region if x.matched_rom else 'Unknown'))
+                x.matched_rom.region if x.matched_rom else 'Unknown',
+                x.matched_rom.system_name if x.matched_rom else ""))
             selected.append(best)
         return selected
 
@@ -61,11 +121,13 @@ class OneGameOneROMStrategy(OrganizationStrategy):
         base = re.sub(r'\s*\[[^\]]*\]', '', base)
         return base.strip()
 
-    def _get_priority(self, region: str) -> int:
+    def _get_priority(self, region: str, system_name: str = "") -> int:
+        per_system = _SELECTION_POLICY.get("per_system", {}) or {}
+        region_priority = per_system.get(system_name, _SELECTION_POLICY.get("global_priority", []))
         try:
-            return self.REGION_PRIORITY.index(region)
+            return region_priority.index(region)
         except ValueError:
-            return len(self.REGION_PRIORITY)
+            return len(region_priority)
 
 
 class RegionStrategy(OrganizationStrategy):
@@ -117,6 +179,26 @@ class SystemStrategy(OrganizationStrategy):
         return os.path.join(system, name)
 
 
+
+
+class MuseumStrategy(OrganizationStrategy):
+    """Organize by preservation-themed hierarchy."""
+
+    def get_relative_path(self, scanned: ScannedFile) -> str:
+        rom = scanned.matched_rom
+        system = (rom.system_name if rom and rom.system_name else "Unknown System")
+        region = (rom.region if rom and rom.region else "Unknown")
+        generation = "Unknown Era"
+        s = system.lower()
+        if any(k in s for k in ["nes", "master system", "2600"]):
+            generation = "3rd Gen"
+        elif any(k in s for k in ["snes", "genesis", "mega drive", "pc engine"]):
+            generation = "4th Gen"
+        elif any(k in s for k in ["n64", "playstation", "saturn"]):
+            generation = "5th Gen"
+        name = rom.name if rom else scanned.filename
+        return os.path.join(generation, system, region, name)
+
 class CompositeStrategy(OrganizationStrategy):
     """Chain multiple strategies. Each contributes a directory level."""
 
@@ -154,6 +236,7 @@ STRATEGY_MAP = {
     'emulationstation': EmulationStationStrategy,
     'flat': FlatStrategy,
     'system': SystemStrategy,
+    'museum': MuseumStrategy,
 }
 
 
@@ -190,10 +273,11 @@ class Organizer:
         'alphabetical': 'Alphabetical - Organize into A-Z folders',
         'emulationstation': 'EmulationStation - Flat structure for ES/RetroPie',
         'flat': 'Flat - Rename to proper names, no subfolders',
+        'museum': 'Museum - Generation/System/Region hierarchy',
     }
 
     # Region priority for 1G1R (lower = better) - kept for backward compat
-    REGION_PRIORITY = OneGameOneROMStrategy.REGION_PRIORITY
+    REGION_PRIORITY = _SELECTION_POLICY.get("global_priority", [])
 
     def __init__(self):
         """Initialize organizer with empty history"""
@@ -230,6 +314,12 @@ class Organizer:
 
         for i, scanned in enumerate(to_process):
             rel_path = strat.get_relative_path(scanned)
+            rel_dir = os.path.dirname(rel_path)
+            rendered_name = render_name_template(scanned)
+            if os.path.splitext(rendered_name)[1] == "":
+                ext = os.path.splitext(os.path.basename(rel_path))[1]
+                rendered_name = f"{rendered_name}{ext}" if ext else rendered_name
+            rel_path = os.path.join(rel_dir, rendered_name) if rel_dir else rendered_name
             dest = os.path.join(output_dir, rel_path)
 
             try:
@@ -264,6 +354,12 @@ class Organizer:
 
         for scanned in to_process:
             rel_path = strat.get_relative_path(scanned)
+            rel_dir = os.path.dirname(rel_path)
+            rendered_name = render_name_template(scanned)
+            if os.path.splitext(rendered_name)[1] == "":
+                ext = os.path.splitext(os.path.basename(rel_path))[1]
+                rendered_name = f"{rendered_name}{ext}" if ext else rendered_name
+            rel_path = os.path.join(rel_dir, rendered_name) if rel_dir else rendered_name
             dest = os.path.join(output_dir, rel_path)
 
             act_type = action
@@ -308,12 +404,25 @@ class Organizer:
             shutil.move(source, dest)
             action_type = 'move'
 
-        return OrganizationAction(
+        action_obj = OrganizationAction(
             action_type=action_type,
             source=source,
             destination=dest,
             timestamp=timestamp
         )
+        if _AUDIT_ENABLED:
+            try:
+                os.makedirs(os.path.dirname(_AUDIT_PATH), exist_ok=True)
+                with open(_AUDIT_PATH, "a", encoding="utf-8") as af:
+                    af.write(json.dumps({
+                        "timestamp": timestamp,
+                        "action": action_type,
+                        "source": source,
+                        "destination": dest,
+                    }, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+        return action_obj
 
     def undo_last(self) -> bool:
         """Undo the last batch of actions."""
