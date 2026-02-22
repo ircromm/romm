@@ -5,6 +5,7 @@ Compatible with Flet 0.80+.
 """
 
 import os
+import shutil
 import sys
 import threading
 import time
@@ -28,8 +29,15 @@ from .settings import (
 )
 from .health import run_health_checks
 from .dat_sources import DATSourceManager, KNOWN_SOURCES
-from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
-
+from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned, clear_snapshot
+from .shared_config import (
+    STRATEGIES,
+    APP_DATA_DIR,
+    IMPORTED_DATS_DIR,
+    IMPORTED_COLLECTIONS_DIR,
+    ensure_app_directories,
+)
+from .blindmatch import build_blindmatch_rom
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
 
@@ -53,8 +61,56 @@ def _safe_get_language():
         return func()
     return LANG_EN
 
-from .shared_config import STRATEGIES
-from .blindmatch import build_blindmatch_rom
+
+def _ensure_app_structure() -> None:
+    ensure_app_directories()
+    os.makedirs(os.path.join(APP_DATA_DIR, "sessions"), exist_ok=True)
+
+
+def _copy_into_app_storage(source_path: str, destination_dir: str) -> str:
+    """Copy imported file to app-local storage and return copied path."""
+    _ensure_app_structure()
+    base = os.path.basename(source_path)
+    stem, ext = os.path.splitext(base)
+    safe_stem = "".join(c if c.isalnum() or c in "-_ ." else "_" for c in stem).strip() or "imported"
+    candidate = os.path.join(destination_dir, f"{safe_stem}{ext.lower()}")
+    suffix = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(destination_dir, f"{safe_stem}-{suffix}{ext.lower()}")
+        suffix += 1
+    shutil.copy2(source_path, candidate)
+    return candidate
+
+
+def _copy_dat_to_local_cache(source_path: str) -> str:
+    return _copy_into_app_storage(source_path, IMPORTED_DATS_DIR)
+
+
+def _copy_collection_to_local_cache(source_path: str) -> str:
+    return _copy_into_app_storage(source_path, IMPORTED_COLLECTIONS_DIR)
+
+
+SESSION_EXPORTS_DIR = os.path.join(APP_DATA_DIR, "sessions")
+
+
+def _clear_app_cache() -> None:
+    clear_snapshot()
+    cache_dirs = [
+        os.path.join(APP_DATA_DIR, "cache"),
+    ]
+    for cache_dir in cache_dirs:
+        if not os.path.isdir(cache_dir):
+            continue
+        for name in os.listdir(cache_dir):
+            path = os.path.join(cache_dir, name)
+            try:
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    os.remove(path)
+            except Exception:
+                pass
+
 
 # ─── Catppuccin Mocha Palette ──────────────────────────────────────────────────
 MOCHA = {
@@ -116,6 +172,7 @@ class AppState:
     """Central application state shared across all views."""
 
     def __init__(self):
+        _ensure_app_structure()
         self.multi_matcher = MultiROMMatcher()
         self.organizer = Organizer()
         self.collection_manager = CollectionManager()
@@ -164,13 +221,53 @@ class AppState:
 
 
 # ─── Snackbar ───────────────────────────────────────────────────────────────────
+def _legacy_open_overlay(pg: ft.Page, control: ft.Control):
+    """Fallback para versões antigas do Flet sem page.open()."""
+    control.open = True
+    if isinstance(control, ft.AlertDialog):
+        pg.dialog = control
+    elif isinstance(control, ft.SnackBar):
+        pg.snack_bar = control
+    pg.update()
+
+
+def _legacy_close_overlay(pg: ft.Page, control: ft.Control):
+    """Fallback para versões antigas do Flet sem page.close()."""
+    control.open = False
+    if isinstance(control, ft.AlertDialog) and getattr(pg, "dialog", None) is control:
+        pg.dialog = None
+    pg.update()
+
+
+def _safe_open_overlay(pg: ft.Page, control: ft.Control):
+    """Abre overlays com compatibilidade entre APIs nova/legada do Flet."""
+    open_fn = getattr(pg, "open", None)
+    if callable(open_fn):
+        open_fn(control)
+        return
+    _legacy_open_overlay(pg, control)
+
+
+def _safe_close_overlay(pg: ft.Page, control: ft.Control):
+    """Fecha overlays com compatibilidade entre APIs nova/legada do Flet."""
+    close_fn = getattr(pg, "close", None)
+    if callable(close_fn):
+        close_fn(control)
+        return
+    _legacy_close_overlay(pg, control)
+
+
 def _show_snack(pg: ft.Page, text: str, color: str = MOCHA["text"], duration: int = 3000):
     sb = ft.SnackBar(
         content=ft.Text(text, color=color),
         bgcolor=MOCHA["surface0"],
         duration=duration,
     )
-    pg.show_dialog(sb)
+    show_dialog_fn = getattr(pg, "show_dialog", None)
+    if callable(show_dialog_fn):
+        show_dialog_fn(sb)
+        return
+    _safe_open_overlay(pg, sb)
 
 
 def region_badge(region: str) -> ft.Container:
@@ -537,6 +634,7 @@ class ImportScanView(ft.Column):
             on_click=self._start_scan, disabled=True,
         )
         self.progress_text = ft.Text("", size=12, color=MOCHA["subtext0"])
+        self.scan_progress_bar = ft.ProgressBar(width=420, value=0, color=MOCHA["green"], bgcolor=MOCHA["surface1"])
         self.blindmatch_switch = ft.Switch(label="BlindMatch", value=False, tooltip="BlindMatch")
         self.blindmatch_system_field = ft.TextField(label=_tr("system"), width=220, tooltip=_tr("tip_blindmatch_system"))
         self._selected_folder = ""
@@ -608,6 +706,7 @@ class ImportScanView(ft.Column):
                 ft.Row(controls=[self.recursive_switch, self.archives_switch, self.blindmatch_switch, self.blindmatch_system_field], spacing=16),
                 ft.Divider(height=1, color=MOCHA["surface1"]),
                 ft.Row(controls=[self.scan_btn, self.progress_text], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                self.scan_progress_bar,
             ], spacing=10)),
         ])
 
@@ -643,7 +742,8 @@ class ImportScanView(ft.Column):
         errors = []
         for f in files:
             try:
-                dat_info, roms = DATParser.parse_with_info(f.path)
+                local_dat_path = _copy_dat_to_local_cache(f.path)
+                dat_info, roms = DATParser.parse_with_info(local_dat_path)
                 self.state.multi_matcher.add_dat(dat_info, roms)
             except Exception as ex:
                 errors.append(f"{f.name}: {ex}")
@@ -700,7 +800,11 @@ class ImportScanView(ft.Column):
         self.state.blindmatch_system = (self.blindmatch_system_field.value or "").strip()
         self.scan_btn.disabled = True
         self.scan_btn.text = "Scanning..."
+        self.scan_progress_bar.value = None
+        self.progress_text.value = "Starting scan..."
         self.scan_btn.update()
+        self.scan_progress_bar.update()
+        self.progress_text.update()
         recursive = self.recursive_switch.value
         scan_archives = self.archives_switch.value
         thread = threading.Thread(target=self._scan_worker, args=(folder, recursive, scan_archives), daemon=True)
@@ -712,6 +816,11 @@ class ImportScanView(ft.Column):
             total = len(files)
             self.state.scan_total = total
             self.state.scan_progress = 0
+            self.scan_progress_bar.value = 0 if total > 0 else 1
+            try:
+                self.scan_progress_bar.update()
+            except Exception:
+                pass
             scanned_all: List[ScannedFile] = []
             for i, fpath in enumerate(files):
                 try:
@@ -725,8 +834,10 @@ class ImportScanView(ft.Column):
                 self.state.scan_progress = i + 1
                 if (i + 1) % 50 == 0 or (i + 1) == total:
                     self.progress_text.value = f"Scanned {i + 1}/{total} files..."
+                    self.scan_progress_bar.value = (i + 1) / total if total else 1
                     try:
                         self.progress_text.update()
+                        self.scan_progress_bar.update()
                     except Exception:
                         pass
             identified, unidentified = self.state.multi_matcher.match_all(scanned_all)
@@ -742,9 +853,11 @@ class ImportScanView(ft.Column):
             id_count = len(self.state.identified)
             un_count = len(self.state.unidentified)
             self.progress_text.value = f"Done! {id_count} identified, {un_count} unidentified"
+            self.scan_progress_bar.value = 1
             try:
                 self.scan_btn.update()
                 self.progress_text.update()
+                self.scan_progress_bar.update()
             except Exception:
                 pass
             _show_snack(self._pg, f"Scan complete: {id_count} identified, {un_count} unidentified", MOCHA["green"], 4000)
@@ -939,11 +1052,16 @@ class ToolsLogsView(ft.Column):
             return
         filepath = files[0].path
         try:
-            coll = self.state.collection_manager.load(filepath)
+            local_collection_path = _copy_collection_to_local_cache(filepath)
+            coll = self.state.collection_manager.load(local_collection_path)
             self.state.multi_matcher = MultiROMMatcher()
             for di in coll.dat_infos:
                 try:
-                    _, roms = DATParser.parse_with_info(di.filepath)
+                    dat_path = di.filepath
+                    if dat_path and os.path.isfile(dat_path):
+                        dat_path = _copy_dat_to_local_cache(dat_path)
+                    _, roms = DATParser.parse_with_info(dat_path)
+                    di.filepath = dat_path
                     self.state.multi_matcher.add_dat(di, roms)
                 except Exception:
                     pass
@@ -1466,39 +1584,62 @@ def main(page: ft.Page):
     state = AppState()
     state.restore_session()
     content_area = ft.Container(expand=True, bgcolor=MOCHA["base"])
+    session_save_picker = ft.FilePicker()
+    page.services.append(session_save_picker)
 
     def ask_new_session():
-        def _reset(_):
+        def _reset_session(clear_cache: bool, close_dialog: Optional[ft.Control] = None):
+            if clear_cache:
+                _clear_app_cache()
             state.reset_session()
             switch_view(0)
-            page.close(dialog)
+            if close_dialog:
+                _safe_close_overlay(page, close_dialog)
             _show_snack(page, "Nova sessão iniciada.", MOCHA["green"])
 
-        def _save_and_reset(_):
+        async def _save_and_reset(_):
+            os.makedirs(SESSION_EXPORTS_DIR, exist_ok=True)
+            default_name = f"session-{int(time.time())}.romcol.json"
+            save_path = await session_save_picker.save_file(
+                dialog_title="Salvar coleção atual",
+                file_name=default_name,
+                initial_directory=SESSION_EXPORTS_DIR,
+                allowed_extensions=["json"],
+            )
+            if not save_path:
+                _show_snack(page, "Salvar cancelado.", MOCHA["peach"])
+                return
+
             try:
-                name = f"autosave-{int(time.time())}"
+                now = time.strftime("%Y-%m-%dT%H:%M:%S")
                 collection = Collection(
-                    name=name,
+                    name=os.path.splitext(os.path.basename(save_path))[0],
+                    created_at=now,
+                    updated_at=now,
                     dat_infos=state.multi_matcher.get_dat_list(),
+                    dat_filepaths=[d.filepath for d in state.multi_matcher.get_dat_list()],
                     identified=[s.to_dict() for s in state.identified],
                     unidentified=[s.to_dict() for s in state.unidentified],
                 )
-                state.collection_manager.save(collection)
-            except Exception:
-                pass
-            _reset(None)
+                state.collection_manager.save(collection, filepath=save_path)
+                _reset_session(clear_cache=True, close_dialog=dialog)
+            except Exception as ex:
+                _show_snack(page, f"Erro ao salvar coleção: {ex}", MOCHA["red"], 5000)
+
+        def _dont_save(_):
+            _reset_session(clear_cache=True, close_dialog=dialog)
 
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Nova sessão"),
-            content=ft.Text("Deseja salvar a sessão atual antes de reiniciar?"),
+            content=ft.Text("Deseja salvar a coleção atual antes de iniciar uma sessão limpa?"),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda e: page.close(dialog)),
-                ft.TextButton("Não salvar", on_click=_reset),
-                ft.ElevatedButton("Salvar e reiniciar", on_click=_save_and_reset),
+                ft.TextButton("Cancelar", on_click=lambda e: _safe_close_overlay(page, dialog)),
+                ft.TextButton("Não", on_click=_dont_save),
+                ft.ElevatedButton("Sim", on_click=_save_and_reset),
             ],
         )
-        page.open(dialog)
+        _safe_open_overlay(page, dialog)
 
     def navigate(index: int):
         nav_rail.selected_index = index
@@ -1522,24 +1663,39 @@ def main(page: ft.Page):
         content_area.update()
         state.persist_session()
 
+    language_is_pt = _safe_get_language() == LANG_PT_BR
+
+    def _toggle_language(e):
+        _set_language(LANG_PT_BR if e.control.value else LANG_EN)
+        page.clean()
+        main(page)
+
     nav_rail = ft.NavigationRail(
         selected_index=0,
+        extended=True,
         label_type=ft.NavigationRailLabelType.ALL,
-        min_width=80, min_extended_width=200,
+        min_width=230,
+        min_extended_width=230,
         bgcolor=MOCHA["mantle"],
         indicator_color=MOCHA["surface1"],
         leading=ft.Container(
             content=ft.Column(controls=[
                 ft.Icon(ft.Icons.SPORTS_ESPORTS, size=32, color=MOCHA["mauve"]),
-                ft.Text(_tr("flet_brand"), size=11, weight=ft.FontWeight.BOLD, color=MOCHA["mauve"]),
-                ft.Dropdown(
-                    width=70, value=_safe_get_language(),
-                    options=[ft.dropdown.Option(LANG_EN, "EN"), ft.dropdown.Option(LANG_PT_BR, "PT")],
-                    on_select=lambda e: (_set_language(e.control.value), page.clean(), main(page)),
-                    text_size=10,
-                ),
+                ft.Text(_tr("flet_brand"), size=12, weight=ft.FontWeight.BOLD, color=MOCHA["mauve"]),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
             padding=ft.Padding.only(top=16, bottom=8),
+        ),
+        trailing=ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Text("EN", size=11, color=MOCHA["subtext0"]),
+                    ft.Switch(value=language_is_pt, on_change=_toggle_language, active_color=MOCHA["mauve"]),
+                    ft.Text("PT", size=11, color=MOCHA["subtext0"]),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.only(bottom=14),
         ),
         destinations=[
             ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD_OUTLINED, selected_icon=ft.Icons.DASHBOARD, label=_tr("flet_nav_dashboard")),
@@ -1570,6 +1726,7 @@ GUI_FLET_AVAILABLE = True
 
 def run_flet_gui():
     """Launch the Flet desktop GUI."""
+    _ensure_app_structure()
     apply_runtime_settings(load_settings())
     ft.run(main)
     return 0
