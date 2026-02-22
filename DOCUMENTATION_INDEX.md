@@ -445,3 +445,13 @@ This documentation package provides everything needed to modernize ROM Manager's
 - **Visual mockups** for reference and communication
 
 **Start with Phase 1 to add context menus and keyboard shortcuts. This delivers 80% of the UX improvement with 25% of the effort.**
+
+---
+
+## Flet-specific maintenance reference
+
+For desktop-Flet maintenance and compatibility rules, read:
+
+- `docs/FLET_AGENT_PROTOCOL.md`
+
+Use this guide before changing dialogs, snackbars, overlays, or page open/close behavior in `rommanager/gui_flet.py`.
