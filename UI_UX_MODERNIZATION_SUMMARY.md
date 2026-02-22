@@ -290,3 +290,12 @@ The ROM Manager GUI now provides interactions familiar to Windows Explorer users
 
 
 - Flet: NavigationRail lateral compactado para largura mínima de 115px em modo ícones para aumentar a área útil de conteúdo.
+
+
+## Novos aprendizados (fase Desktop Multi-UI)
+
+1. **Divulgação progressiva reduz erros operacionais**: separar scanner básico de opções avançadas melhora foco e onboarding.
+2. **Layout orientado por vistas reduz sobrecarga cognitiva**: sidebar com áreas dedicadas simplifica leitura da interface.
+3. **Design tokens evitam dismorfia visual**: em Flet, padrões de 8pt + raios consistentes estabilizam densidade visual.
+4. **Ações primárias e secundárias precisam hierarquia espacial**: CTA principal à direita com destaque acelera decisão do usuário.
+5. **Arquitetura premium começa no shell**: em PySide6, frameless + three-pane + drawer + wizard cria base moderna antes de refinamentos funcionais.

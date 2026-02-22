@@ -177,14 +177,23 @@ REGION_BADGE_COLORS = {
 }
 DEFAULT_BADGE_COLOR = MOCHA["overlay1"]
 
+SPACE_8 = 8
+SPACE_16 = 16
+SPACE_24 = 24
+SPACE_32 = 32
+RADIUS_SM = 8
+RADIUS_LG = 12
+ICON_BUTTON_SIZE = 20
+VIEW_TITLE_SIZE = 24
+
 
 # ─── Helpers ────────────────────────────────────────────────────────────────────
 def _card_container(content, **kwargs):
     """Styled card container used throughout the UI."""
     defaults = dict(
         bgcolor=MOCHA["surface0"],
-        border_radius=12,
-        padding=ft.Padding.all(16),
+        border_radius=RADIUS_LG,
+        padding=ft.Padding.all(SPACE_16),
         border=ft.Border.all(1, MOCHA["surface1"]),
     )
     defaults.update(kwargs)
@@ -368,7 +377,7 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
                         ],
                         spacing=0,
                     ),
-                    border_radius=8,
+                    border_radius=RADIUS_SM,
                     border=ft.Border.all(1, MOCHA["surface1"]),
                     clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                 ),
@@ -390,17 +399,18 @@ class DetailPanel(ft.Container):
         self._clipboard = ft.Clipboard()
         self._pg.services.append(self._clipboard)
 
-        self.title_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD, color=MOCHA["text"])
+        self.title_text = ft.Text("", size=20, weight=ft.FontWeight.BOLD, color=MOCHA["text"])
         self.system_text = ft.Text("", size=13, color=MOCHA["subtext0"])
-        self.region_container = ft.Row(controls=[], spacing=6)
-        self.meta_column = ft.Column(controls=[], spacing=8, scroll=ft.ScrollMode.AUTO)
-        self.action_row = ft.Row(controls=[], spacing=8)
-        self.close_btn = ft.IconButton(icon=ft.Icons.CLOSE, icon_color=MOCHA["overlay1"], icon_size=18, on_click=self._close)
+        self.region_container = ft.Row(controls=[], spacing=SPACE_8)
+        self.meta_column = ft.Column(controls=[], spacing=SPACE_8, scroll=ft.ScrollMode.AUTO)
+        self.action_row = ft.Row(controls=[], spacing=SPACE_8)
+        self.close_btn = ft.IconButton(icon=ft.Icons.CLOSE, icon_color=MOCHA["overlay1"], icon_size=ICON_BUTTON_SIZE, on_click=self._close)
 
-        self.width = 340
+        self.width = 400
+        self.min_width = 384
         self.bgcolor = MOCHA["mantle"]
         self.border = ft.Border.only(left=ft.BorderSide(1, MOCHA["surface1"]))
-        self.padding = ft.Padding.all(20)
+        self.padding = ft.Padding.all(SPACE_24)
         self.visible = False
         self.animate_opacity = ft.Animation(250, ft.AnimationCurve.EASE_OUT)
         self.opacity = 0
@@ -418,7 +428,7 @@ class DetailPanel(ft.Container):
                 ft.Divider(height=1, color=MOCHA["surface1"]),
                 self.action_row,
             ],
-            spacing=12, expand=True,
+            spacing=SPACE_16, expand=True,
         )
 
     def show(self, scanned: ScannedFile):
@@ -441,8 +451,8 @@ class DetailPanel(ft.Container):
             ], spacing=2))
 
         self.action_row.controls = [
-            ft.Button(_tr("flet_open_folder"), icon=ft.Icons.FOLDER_OPEN, bgcolor=MOCHA["surface0"], color=MOCHA["text"], on_click=self._open_folder),
-            ft.Button(_tr("flet_copy_crc"), icon=ft.Icons.CONTENT_COPY, bgcolor=MOCHA["surface0"], color=MOCHA["text"], on_click=self._copy_crc),
+            ft.Button(_tr("flet_open_folder"), icon=ft.Icons.FOLDER_OPEN, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["surface0"], color=MOCHA["text"], on_click=self._open_folder),
+            ft.Button(_tr("flet_copy_crc"), icon=ft.Icons.CONTENT_COPY, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["surface0"], color=MOCHA["text"], on_click=self._copy_crc),
         ]
         self.visible = True
         self.opacity = 1
@@ -510,7 +520,7 @@ class DashboardView(ft.Column):
             ft.Icon(ft.Icons.DASHBOARD_OUTLINED, size=28, color=MOCHA["mauve"]),
             ft.Text(_tr("flet_nav_dashboard"), size=26, weight=ft.FontWeight.BOLD, color=MOCHA["text"]),
             ft.Container(expand=True),
-            ft.Button("Nova sessão", icon=ft.Icons.RESTART_ALT, bgcolor=MOCHA["red"], color=MOCHA["crust"], on_click=lambda e: self.new_session_cb()),
+            ft.Button("Nova sessão", icon=ft.Icons.RESTART_ALT, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["red"], color=MOCHA["crust"], on_click=lambda e: self.new_session_cb()),
         ], spacing=12))
 
         stats = [
@@ -529,7 +539,7 @@ class DashboardView(ft.Column):
                         ft.Text(label, size=12, color=MOCHA["subtext0"]),
                     ], spacing=2),
                 ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                bgcolor=MOCHA["surface0"], border_radius=12,
+                bgcolor=MOCHA["surface0"], border_radius=RADIUS_LG,
                 padding=ft.Padding.all(20), expand=True,
                 border=ft.Border.all(1, MOCHA["surface1"]),
             ))
@@ -555,7 +565,7 @@ class DashboardView(ft.Column):
                 )
 
         if dats:
-            self.controls.append(ft.Text(_tr("flet_collection_completeness"), size=18, weight=ft.FontWeight.W_600, color=MOCHA["text"]))
+            self.controls.append(ft.Text(_tr("flet_collection_completeness"), size=VIEW_TITLE_SIZE, weight=ft.FontWeight.W_600, color=MOCHA["text"]))
             completeness = self.state.multi_matcher.get_completeness_by_dat(self.state.identified)
             for dat_id, comp in completeness.items():
                 dat_info = self.state.multi_matcher.dat_infos.get(dat_id)
@@ -571,13 +581,13 @@ class DashboardView(ft.Column):
                         ft.Text(f"{found}/{total_in_dat} ({pct:.1f}%)", size=12, color=MOCHA["subtext0"]),
                     ]),
                     ft.ProgressBar(value=pct / 100, bgcolor=MOCHA["surface1"], color=bar_color, bar_height=6, border_radius=3),
-                ], spacing=6), border_radius=10))
+                ], spacing=SPACE_8), border_radius=RADIUS_LG))
         else:
             self.controls.append(_card_container(
                 ft.Column(controls=[
                     ft.Icon(ft.Icons.INFO_OUTLINE, size=40, color=MOCHA["overlay0"]),
                     ft.Text("No DAT files loaded yet", size=16, color=MOCHA["subtext0"]),
-                    ft.Button("Go to Import & Scan", icon=ft.Icons.UPLOAD_FILE, bgcolor=MOCHA["mauve"], color=MOCHA["crust"], on_click=lambda e: self.navigate_cb(2)),
+                    ft.Button("Go to Import & Scan", icon=ft.Icons.UPLOAD_FILE, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["mauve"], color=MOCHA["crust"], on_click=lambda e: self.navigate_cb(2)),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
                 alignment=ft.Alignment(0, 0), padding=ft.Padding.all(40),
             ))
@@ -592,14 +602,14 @@ class LibraryView(ft.Row):
         self.navigate_cb = navigate_cb
         self.search_field = ft.TextField(
             hint_text=_tr("flet_search_games"), prefix_icon=ft.Icons.SEARCH,
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             hint_style=ft.TextStyle(color=MOCHA["overlay0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
-            height=42, text_size=13, on_change=self._on_search, expand=True,
+            height=40, text_size=13, on_change=self._on_search, expand=True,
         )
         self.grid = ft.GridView(
-            expand=True, runs_count=5, max_extent=200, child_aspect_ratio=0.72,
-            spacing=14, run_spacing=14, padding=ft.Padding.all(20),
+            expand=True, runs_count=5, max_extent=200, child_aspect_ratio=0.78,
+            spacing=SPACE_16, run_spacing=SPACE_16, padding=ft.Padding.all(SPACE_24),
         )
         self.detail_panel = DetailPanel(pg)
         self._search_text = ""
@@ -623,10 +633,10 @@ class LibraryView(ft.Row):
         pct = (id_count / total * 100) if total else 0
         return ft.Container(
             content=ft.Row(controls=[
-                self.search_field, ft.Container(width=12),
+                self.search_field, ft.Container(width=SPACE_16),
                 ft.Text(f"{id_count} {_tr('flet_identified')}  |  {un_count} {_tr('flet_unidentified')}  |  {pct:.0f}%", size=12, color=MOCHA["subtext0"]),
             ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=ft.Padding.symmetric(horizontal=20, vertical=12),
+            padding=ft.Padding.symmetric(horizontal=SPACE_24, vertical=SPACE_16),
             bgcolor=MOCHA["mantle"],
             border=ft.Border.only(bottom=ft.BorderSide(1, MOCHA["surface1"])),
         )
@@ -703,7 +713,7 @@ class ImportScanView(ft.Column):
                         on_click=lambda e, url=src["url"]: webbrowser.open(url),
                     ),
                 ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                bgcolor=MOCHA["mantle"], border_radius=8,
+                bgcolor=MOCHA["mantle"], border_radius=RADIUS_SM,
                 padding=ft.Padding.symmetric(horizontal=8, vertical=6),
             ))
 
@@ -769,7 +779,7 @@ class ImportScanView(ft.Column):
                         ft.Text(f"{dat.rom_count} ROMs  |  v{dat.version}" if dat.version else f"{dat.rom_count} ROMs", size=11, color=MOCHA["subtext0"]),
                     ], spacing=1, expand=True),
                 ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                bgcolor=MOCHA["mantle"], border_radius=8,
+                bgcolor=MOCHA["mantle"], border_radius=RADIUS_SM,
                 padding=ft.Padding.symmetric(horizontal=8, vertical=4),
             ))
         self._update_scan_btn_state()
@@ -931,11 +941,11 @@ class ToolsLogsView(ft.Column):
         self._pg.services.append(self.collection_picker)
 
         self.save_name_field = ft.TextField(
-            hint_text=_tr("flet_collection_name"), border_radius=8,
+            hint_text=_tr("flet_collection_name"), border_radius=RADIUS_SM,
             bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             hint_style=ft.TextStyle(color=MOCHA["overlay0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
-            height=42, text_size=13, expand=True,
+            height=40, text_size=13, expand=True,
         )
 
         all_strategies = [ft.dropdown.Option(key=s["id"], text=s["name"]) for s in STRATEGIES]
@@ -949,7 +959,7 @@ class ToolsLogsView(ft.Column):
         self.strategy_dropdown = ft.Dropdown(
             label=_tr("strategy"), tooltip=_tr("tip_choose_strategy"),
             options=all_strategies, value="flat",
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             label_style=ft.TextStyle(color=MOCHA["subtext0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             width=240, text_size=13,
@@ -957,7 +967,7 @@ class ToolsLogsView(ft.Column):
         self.action_dropdown = ft.Dropdown(
             label=_tr("action"), tooltip=_tr("tip_choose_action"),
             options=[ft.dropdown.Option(key="copy", text=_tr("copy_action")), ft.dropdown.Option(key="move", text=_tr("move_action"))],
-            value="copy", border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            value="copy", border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             label_style=ft.TextStyle(color=MOCHA["subtext0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             width=140, text_size=13,
@@ -1276,10 +1286,10 @@ class MyrientView(ft.Column):
 
         self.search_field = ft.TextField(
             hint_text="Search files...", prefix_icon=ft.Icons.SEARCH,
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             hint_style=ft.TextStyle(color=MOCHA["overlay0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
-            height=42, text_size=13, on_submit=self._on_search, expand=True,
+            height=40, text_size=13, on_submit=self._on_search, expand=True,
         )
         self.file_list = ft.ListView(spacing=4, expand=True, height=400, padding=ft.Padding.all(8))
         self.status_text = ft.Text("", size=12, color=MOCHA["subtext0"])
@@ -1324,7 +1334,7 @@ class MyrientView(ft.Column):
         system_dropdown = ft.Dropdown(
             label="System", options=system_options,
             value=self._selected_system or None,
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             label_style=ft.TextStyle(color=MOCHA["subtext0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             expand=True, text_size=12,
@@ -1494,7 +1504,7 @@ class SettingsView(ft.Column):
         profile_dropdown = ft.Dropdown(
             label="Active Profile", options=profile_options,
             value=active_profile,
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             label_style=ft.TextStyle(color=MOCHA["subtext0"]),
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             width=300, text_size=13,
@@ -1529,19 +1539,19 @@ class SettingsView(ft.Column):
 
         self.region_field = ft.TextField(
             label="Region Priority (comma-separated)", value=", ".join(global_priority),
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             text_size=12, expand=True,
         )
         self.allow_tags_field = ft.TextField(
             label="Allow Tags", value=", ".join(allow_tags),
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             text_size=12, width=300,
         )
         self.exclude_tags_field = ft.TextField(
             label="Exclude Tags", value=", ".join(exclude_tags),
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             text_size=12, width=300,
         )
@@ -1560,7 +1570,7 @@ class SettingsView(ft.Column):
         naming = settings.get("naming", {})
         self.naming_template_field = ft.TextField(
             label="Naming Template", value=naming.get("template", "{name}"),
-            border_radius=8, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
+            border_radius=RADIUS_SM, bgcolor=MOCHA["surface0"], color=MOCHA["text"],
             border_color=MOCHA["surface1"], focused_border_color=MOCHA["mauve"],
             text_size=12, width=300,
         )
@@ -1770,16 +1780,16 @@ def main(page: ft.Page):
         selected_index=0,
         extended=False,
         label_type=ft.NavigationRailLabelType.NONE,
-        min_width=115,
-        min_extended_width=115,
+        min_width=104,
+        min_extended_width=104,
         bgcolor=MOCHA["mantle"],
         indicator_color=MOCHA["surface1"],
         leading=ft.Container(
             content=ft.Column(controls=[
-                ft.Icon(ft.Icons.SPORTS_ESPORTS, size=32, color=MOCHA["mauve"]),
-                ft.Text(_tr("flet_brand"), size=12, weight=ft.FontWeight.BOLD, color=MOCHA["mauve"]),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
-            padding=ft.Padding.only(top=16, bottom=8),
+                ft.Icon(ft.Icons.SPORTS_ESPORTS, size=24, color=MOCHA["mauve"]),
+                ft.Text(_tr("flet_brand"), size=11, weight=ft.FontWeight.W_500, color=MOCHA["mauve"]),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=SPACE_8),
+            padding=ft.Padding.only(top=SPACE_16, bottom=SPACE_8),
         ),
         trailing=ft.Container(
             content=ft.Row(
@@ -1791,7 +1801,7 @@ def main(page: ft.Page):
                 alignment=ft.MainAxisAlignment.CENTER,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.only(bottom=14),
+            padding=ft.Padding.only(bottom=SPACE_16),
         ),
         destinations=[
             ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD_OUTLINED, selected_icon=ft.Icons.DASHBOARD, label=_tr("flet_nav_dashboard")),
