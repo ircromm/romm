@@ -105,19 +105,19 @@ class ROMManagerGUI:
         menubar = tk.Menu(self.root, bg=self.colors['surface'], fg=self.colors['fg'])
 
         file_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        file_menu.add_command(label="Save Collection...", command=self._save_collection)
-        file_menu.add_command(label="Open Collection...", command=self._open_collection)
+        file_menu.add_command(label=tr("menu_save_collection"), command=self._save_collection)
+        file_menu.add_command(label=tr("menu_open_collection"), command=self._open_collection)
         file_menu.add_separator()
         self._recent_menu = tk.Menu(file_menu, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        file_menu.add_cascade(label="Recent Collections", menu=self._recent_menu)
+        file_menu.add_cascade(label=tr("menu_recent_collections"), menu=self._recent_menu)
         self._refresh_recent_menu()
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
-        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label=tr("menu_exit"), command=self.root.quit)
+        menubar.add_cascade(label=tr("menu_file"), menu=file_menu)
 
         dat_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
-        dat_menu.add_command(label="DAT Library...", command=self._show_dat_library)
-        menubar.add_cascade(label="DATs", menu=dat_menu)
+        dat_menu.add_command(label=tr("menu_dat_library"), command=self._show_dat_library)
+        menubar.add_cascade(label=tr("menu_dats"), menu=dat_menu)
 
         export_menu = tk.Menu(menubar, tearoff=0, bg=self.colors['surface'], fg=self.colors['fg'])
         export_menu.add_command(label="Export Missing (TXT)...", command=lambda: self._export_missing('txt'))
@@ -139,20 +139,20 @@ class ROMManagerGUI:
         main.pack(fill=tk.BOTH, expand=True)
 
         # Header
-        ttk.Label(main, text="ROM Collection Manager", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(main, text=tr("title_main"), style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
 
         # Top: DATs + Scan
         top = ttk.Frame(main)
         top.pack(fill=tk.X, pady=(0, 8))
 
         # DAT Panel
-        dat_frame = ttk.LabelFrame(top, text="DAT Files", padding=8)
+        dat_frame = ttk.LabelFrame(top, text=tr("panel_dat_files"), padding=8)
         dat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
         dat_btn = ttk.Frame(dat_frame)
         dat_btn.pack(fill=tk.X)
-        ttk.Button(dat_btn, text="Add DAT...", command=self._add_dat).pack(side=tk.LEFT)
-        ttk.Button(dat_btn, text="Remove", command=self._remove_dat).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(dat_btn, text="Library...", command=self._show_dat_library).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(dat_btn, text=tr("btn_add_dat"), command=self._add_dat).pack(side=tk.LEFT)
+        ttk.Button(dat_btn, text=tr("btn_remove"), command=self._remove_dat).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(dat_btn, text=tr("btn_library"), command=self._show_dat_library).pack(side=tk.LEFT, padx=(5, 0))
         
         # DAT List with Scrollbar (Fixed Structure)
         dat_list_frame = ttk.Frame(dat_frame)
@@ -171,14 +171,14 @@ class ROMManagerGUI:
         ttk.Label(dat_frame, textvariable=self.dat_info_var).pack(anchor=tk.W, pady=(3, 0))
 
         # Scan Panel
-        scan_frame = ttk.LabelFrame(top, text="Scan ROMs", padding=8)
+        scan_frame = ttk.LabelFrame(top, text=tr("panel_scan"), padding=8)
         scan_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 0))
         scan_row = ttk.Frame(scan_frame)
         scan_row.pack(fill=tk.X)
         self.scan_path_var = tk.StringVar(value="No folder selected")
         ttk.Label(scan_row, textvariable=self.scan_path_var, width=40).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(scan_row, text="Browse...", command=self._select_folder).pack(side=tk.LEFT)
-        ttk.Button(scan_row, text="Scan", command=self._start_scan).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(scan_row, text=tr("btn_select_folder"), command=self._select_folder).pack(side=tk.LEFT)
+        ttk.Button(scan_row, text=tr("btn_scan"), command=self._start_scan).pack(side=tk.LEFT, padx=(5, 0))
         opts = ttk.Frame(scan_frame)
         opts.pack(fill=tk.X, pady=(5, 0))
         self.scan_archives_var = tk.BooleanVar(value=True)
@@ -204,7 +204,7 @@ class ROMManagerGUI:
 
         # Identified
         id_f = ttk.Frame(self.notebook)
-        self.notebook.add(id_f, text="Identified ROMs")
+        self.notebook.add(id_f, text=tr("tab_identified"))
         self.id_tree = self._make_tree(id_f, IDENTIFIED_COLUMNS)
         self._setup_region_tags(self.id_tree)
 
@@ -491,7 +491,7 @@ class ROMManagerGUI:
             return 'break'
 
         # Ask user what to copy
-        response = messagebox.askyesno("Copy", "Copy CRC32? (No = copy names)")
+        response = messagebox.askyesno(tr("copy"), tr("copy_crc_question"))
         copy_type = 'crc' if response else 'name'
 
         # Copy first selected item
@@ -674,10 +674,10 @@ class ROMManagerGUI:
     def _start_scan(self):
         folder = self.scan_path_var.get()
         if folder == "No folder selected" or not os.path.isdir(folder):
-            messagebox.showwarning("Warning", "Select a valid folder")
+            messagebox.showwarning(tr("warning"), tr("warning_select_valid_folder"))
             return
         if not self.multi_matcher.matchers:
-            messagebox.showwarning("Warning", "Load at least one DAT first")
+            messagebox.showwarning(tr("warning"), tr("warning_load_dat_first"))
             return
         self.scanned_files.clear()
         self.identified.clear()
@@ -856,7 +856,7 @@ class ROMManagerGUI:
     def _preview(self):
         out = self.output_var.get()
         if not out:
-            messagebox.showwarning("Warning", "Select output folder")
+            messagebox.showwarning(tr("warning"), tr("warning_select_output"))
             return
         if not self.identified:
             messagebox.showwarning("Warning", "No identified ROMs")
@@ -881,7 +881,7 @@ class ROMManagerGUI:
     def _organize(self):
         out = self.output_var.get()
         if not out:
-            messagebox.showwarning("Warning", "Select output folder")
+            messagebox.showwarning(tr("warning"), tr("warning_select_output"))
             return
         if not self.identified:
             messagebox.showwarning("Warning", "No identified ROMs")
