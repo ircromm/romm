@@ -1,0 +1,12 @@
+# ROM Manager Requirements
+
+# Desktop interface (Flet - default)
+flet>=0.80.0
+
+# Web interface (optional)
+flask>=2.0.0
+
+# HTTP requests for downloads and DAT sources (optional but recommended)
+requests>=2.28.0
+
+# Note: tkinter is usually included with Python (legacy GUI, use --gui flag)
