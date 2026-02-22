@@ -287,14 +287,14 @@ class DetailPanel(ft.Container):
 
         self.action_row.controls = [
             ft.ElevatedButton(
-                "Open Folder",
+                tr("flet_open_folder"),
                 icon=ft.Icons.FOLDER_OPEN,
                 bgcolor=MOCHA["surface0"],
                 color=MOCHA["text"],
                 on_click=self._open_folder,
             ),
             ft.ElevatedButton(
-                "Copy CRC32",
+                tr("flet_copy_crc"),
                 icon=ft.Icons.CONTENT_COPY,
                 bgcolor=MOCHA["surface0"],
                 color=MOCHA["text"],
@@ -324,7 +324,7 @@ class DetailPanel(ft.Container):
     async def _copy_crc(self, e):
         if self._scanned:
             await self._clipboard.set(self._scanned.crc32.upper())
-            _show_snack(self._pg, "CRC32 copied to clipboard!")
+            _show_snack(self._pg, tr("flet_crc_copied"))
 
 
 # ─── Empty State Widget ──────────────────────────────────────────────────────
@@ -984,21 +984,21 @@ class ToolsLogsView(ft.Column):
                         ft.Row(
                             controls=[
                                 ft.ElevatedButton(
-                                    "Preview",
+                                    tr("flet_preview"),
                                     icon=ft.Icons.PREVIEW,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
                                     on_click=self._preview_organize,
                                 ),
                                 ft.ElevatedButton(
-                                    "Organize",
+                                    tr("flet_organize"),
                                     icon=ft.Icons.AUTO_FIX_HIGH,
                                     bgcolor=MOCHA["green"],
                                     color=MOCHA["crust"],
                                     on_click=self._execute_organize,
                                 ),
                                 ft.ElevatedButton(
-                                    "Undo Last",
+                                    tr("flet_undo_last"),
                                     icon=ft.Icons.UNDO,
                                     bgcolor=MOCHA["peach"],
                                     color=MOCHA["crust"],
@@ -1028,14 +1028,14 @@ class ToolsLogsView(ft.Column):
                             controls=[
                                 self.save_name_field,
                                 ft.ElevatedButton(
-                                    "Save",
+                                    tr("flet_save"),
                                     icon=ft.Icons.SAVE,
                                     bgcolor=MOCHA["blue"],
                                     color=MOCHA["crust"],
                                     on_click=self._save_collection,
                                 ),
                                 ft.ElevatedButton(
-                                    "Load",
+                                    tr("flet_load"),
                                     icon=ft.Icons.FOLDER_OPEN,
                                     bgcolor=MOCHA["surface1"],
                                     color=MOCHA["text"],
@@ -1085,7 +1085,7 @@ class ToolsLogsView(ft.Column):
 
     def _preview_organize(self, e):
         if not self.state.identified:
-            self._log("No identified ROMs to organize.", MOCHA["peach"])
+            self._log(tr("flet_no_identified_to_organize"), MOCHA["peach"])
             return
         if not self._output_folder:
             self._log("Please select an output folder first.", MOCHA["peach"])
@@ -1106,7 +1106,7 @@ class ToolsLogsView(ft.Column):
 
     def _execute_organize(self, e):
         if not self.state.identified:
-            self._log("No identified ROMs to organize.", MOCHA["peach"])
+            self._log(tr("flet_no_identified_to_organize"), MOCHA["peach"])
             return
         if not self._output_folder:
             self._log("Please select an output folder first.", MOCHA["peach"])
