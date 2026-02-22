@@ -1,11 +1,11 @@
 """
-ROM Manager - A tool for organizing ROM collections using DAT files
+R0MM - A tool for organizing ROM collections using DAT files
 
 Supports No-Intro, Redump, TOSEC, and any XML-based DAT format.
 """
 
 __version__ = '2.1.0'
-__author__ = 'ROM Manager'
+__author__ = 'R0MM'
 
 from .models import (
     ROMInfo, ScannedFile, OrganizationAction, DATInfo,
@@ -19,10 +19,6 @@ from .utils import format_size, truncate_string, safe_filename
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 
-try:
-    from .myrient_downloader import MyrientDownloader
-except ImportError:
-    pass
 
 __all__ = [
     'ROMInfo',
@@ -43,7 +39,6 @@ __all__ = [
     'format_size',
     'truncate_string',
     'safe_filename',
-    'MyrientDownloader',
 ]
 
 def run_web(host='127.0.0.1', port=5000):

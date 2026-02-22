@@ -1,5 +1,5 @@
 """
-Web API for ROM Manager using Flask + embedded React UI (v2)
+Web API for R0MM using Flask + embedded React UI (v2)
 Full feature parity with the desktop GUI.
 Includes File Browser API.
 """
@@ -15,6 +15,7 @@ from typing import List
 from flask import Flask, jsonify, request, render_template_string
 from werkzeug.utils import secure_filename
 
+from .monitor import setup_runtime_monitor, monitor_action
 from .models import ROMInfo, ScannedFile, DATInfo, Collection
 from .parser import DATParser
 from .scanner import FileScanner
@@ -25,22 +26,14 @@ from .reporter import MissingROMReporter
 from .dat_library import DATLibrary
 from .dat_sources import DATSourceManager
 from .utils import format_size
+from .blindmatch import build_blindmatch_rom
 from .shared_config import (
     IDENTIFIED_COLUMNS, UNIDENTIFIED_COLUMNS, MISSING_COLUMNS,
     REGION_COLORS, DEFAULT_REGION_COLOR, STRATEGIES,
 )
 
-try:
-    from .downloader import ArchiveOrgDownloader
-    DOWNLOADER_AVAILABLE = True
-except Exception:
-    DOWNLOADER_AVAILABLE = False
-
-try:
-    from .myrient_downloader import MyrientDownloader, DownloadProgress, DownloadStatus
-    MYRIENT_AVAILABLE = True
-except Exception:
-    MYRIENT_AVAILABLE = False
+DOWNLOADER_AVAILABLE = False
+MYRIENT_AVAILABLE = False
 
 # Flask app
 app = Flask(__name__)
@@ -59,6 +52,8 @@ state = {
     'scanning': False,
     'scan_progress': 0,
     'scan_total': 0,
+    'blindmatch_mode': False,
+    'blindmatch_system': '',
 }
 
 
@@ -171,6 +166,7 @@ def get_status():
         'scanning': state['scanning'],
         'scan_progress': state['scan_progress'],
         'scan_total': state['scan_total'],
+        'blindmatch_mode': state.get('blindmatch_mode', False),
     })
 
 
@@ -235,6 +231,7 @@ def start_scan():
     folder = data.get('folder')
     scan_archives = data.get('scan_archives', True)
     recursive = data.get('recursive', True)
+    blindmatch_system = (data.get('blindmatch_system') or '').strip()
 
     if not folder or not os.path.isdir(folder):
         return jsonify({'error': 'Invalid folder'}), 400
@@ -245,9 +242,12 @@ def start_scan():
     if state['scanning']:
         return jsonify({'error': 'Scan already in progress'}), 400
 
+    state['blindmatch_mode'] = bool(blindmatch_system)
+    state['blindmatch_system'] = blindmatch_system
+
     thread = threading.Thread(
         target=_scan_thread,
-        args=(folder, scan_archives, recursive)
+        args=(folder, scan_archives, recursive, blindmatch_system)
     )
     thread.daemon = True
     thread.start()
@@ -255,7 +255,7 @@ def start_scan():
     return jsonify({'success': True, 'message': 'Scan started'})
 
 
-def _scan_thread(folder, scan_archives, recursive):
+def _scan_thread(folder, scan_archives, recursive, blindmatch_system=""):
     state['scanning'] = True
     state['identified'] = []
     state['unidentified'] = []
@@ -270,10 +270,10 @@ def _scan_thread(folder, scan_archives, recursive):
                 ext = os.path.splitext(filepath)[1].lower()
                 if ext == '.zip' and scan_archives:
                     for scanned in FileScanner.scan_archive_contents(filepath):
-                        _process_scanned(scanned)
+                        _process_scanned(scanned, blindmatch_system)
                 else:
                     scanned = FileScanner.scan_file(filepath)
-                    _process_scanned(scanned)
+                    _process_scanned(scanned, blindmatch_system)
             except Exception:
                 pass
             state['scan_progress'] = i + 1
@@ -281,8 +281,11 @@ def _scan_thread(folder, scan_archives, recursive):
         state['scanning'] = False
 
 
-def _process_scanned(scanned):
-    match = state['multi_matcher'].match(scanned)
+def _process_scanned(scanned, blindmatch_system=""):
+    if blindmatch_system:
+        match = build_blindmatch_rom(scanned, blindmatch_system)
+    else:
+        match = state['multi_matcher'].match(scanned)
     scanned.matched_rom = match
     if match:
         state['identified'].append(scanned)
@@ -561,250 +564,57 @@ def dat_sources_libretro():
     return jsonify({'dats': mgr.list_libretro_dats()})
 
 
-# ── Archive.org Search ─────────────────────────────────────────
+
+# ── Direct download endpoints removed ──────────────────────────
 
 @app.route('/api/archive-search', methods=['POST'])
 def archive_search():
-    if not DOWNLOADER_AVAILABLE:
-        return jsonify({'error': 'requests library not installed'}), 400
-
-    data = request.get_json()
-    rom_name = data.get('rom_name', '')
-    system = data.get('system', '')
-
-    try:
-        dl = ArchiveOrgDownloader()
-        results = dl.search(rom_name, system, max_results=10)
-        return jsonify({'results': results})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
+    return jsonify({'error': 'Direct download/search features were removed from the app'}), 410
 
 
 @app.route('/api/archive-item-files', methods=['POST'])
 def archive_item_files():
-    if not DOWNLOADER_AVAILABLE:
-        return jsonify({'error': 'requests library not installed'}), 400
-
-    data = request.get_json()
-    identifier = data.get('identifier', '')
-
-    try:
-        dl = ArchiveOrgDownloader()
-        files = dl.get_item_files(identifier)
-        return jsonify({'files': files})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-
-# ── Myrient Download ───────────────────────────────────────────
-
-# Download state (per-session, simple)
-dl_state = {
-    'active': False,
-    'progress': None,     # DownloadProgress
-    'downloader': None,   # MyrientDownloader
-    'log': [],
-}
+    return jsonify({'error': 'Direct download/search features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/systems')
 def myrient_systems():
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    systems = MyrientDownloader.get_systems()
-    return jsonify({'systems': systems})
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/files', methods=['POST'])
 def myrient_files():
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    data = request.get_json()
-    system_name = data.get('system_name', '')
-    url = data.get('url', '')
-    query = data.get('query', '')
-
-    try:
-        dl = MyrientDownloader()
-        if query:
-            files = dl.search_files(system_name, query, url)
-        else:
-            files = dl.list_files(system_name, url)
-        return jsonify({
-            'files': [{'name': f.name, 'url': f.url, 'size_text': f.size_text} for f in files],
-            'count': len(files),
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/download-missing', methods=['POST'])
 def myrient_download_missing():
-    """Start downloading missing ROMs in background."""
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    if dl_state['active']:
-        return jsonify({'error': 'Download already in progress'}), 400
-
-    data = request.get_json()
-    dest_folder = data.get('dest_folder', '')
-    selected_names = data.get('selected_names', [])  # empty = all missing
-    download_delay = max(0, min(60, int(data.get('download_delay', 5))))
-
-    if not dest_folder or not os.path.isdir(dest_folder):
-        return jsonify({'error': 'Invalid destination folder'}), 400
-
-    mm = state['multi_matcher']
-    if not mm.matchers:
-        return jsonify({'error': 'Load DATs and scan first'}), 400
-
-    all_missing = mm.get_missing(state['identified'])
-    if selected_names:
-        name_set = set(selected_names)
-        to_download = [r for r in all_missing if r.name in name_set]
-    else:
-        to_download = all_missing
-
-    if not to_download:
-        return jsonify({'error': 'No missing ROMs to download'}), 400
-
-    dl_state['log'] = []
-    dl_state['active'] = True
-    dl_state['progress'] = None
-
-    def worker():
-        try:
-            dl = MyrientDownloader()
-            dl_state['downloader'] = dl
-            dl_state['log'].append(f"Resolving URLs for {len(to_download)} ROMs...")
-
-            def resolve_cb(name, cur, tot):
-                dl_state['log'].append(f"Resolve {cur}/{tot}: {name}")
-
-            queued = dl.queue_missing_roms(to_download, dest_folder, resolve_cb)
-            dl_state['log'].append(f"Found {queued}/{len(to_download)} ROMs on Myrient")
-
-            if queued == 0:
-                dl_state['log'].append("No ROMs found on Myrient")
-                return
-
-            def on_progress(prog):
-                dl_state['progress'] = {
-                    'current_index': prog.current_index,
-                    'total_count': prog.total_count,
-                    'completed': prog.completed,
-                    'failed': prog.failed,
-                    'cancelled': prog.cancelled,
-                    'current_rom': prog.current_task.rom_name if prog.current_task else '',
-                    'current_bytes': prog.current_task.downloaded_bytes if prog.current_task else 0,
-                    'current_total': prog.current_task.total_bytes if prog.current_task else 0,
-                    'current_status': prog.current_task.status.name if prog.current_task else '',
-                }
-
-            result = dl.start_downloads(on_progress, download_delay=download_delay)
-            dl_state['log'].append(
-                f"DONE: {result.completed} downloaded, {result.failed} failed, {result.cancelled} cancelled")
-        except Exception as e:
-            dl_state['log'].append(f"ERROR: {e}")
-        finally:
-            dl_state['active'] = False
-            dl_state['downloader'] = None
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-
-    return jsonify({'success': True, 'queuing': len(to_download)})
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/download-files', methods=['POST'])
 def myrient_download_files():
-    """Download specific files from Myrient browser (by URL)."""
-    if not MYRIENT_AVAILABLE:
-        return jsonify({'error': 'Myrient downloader not available'}), 400
-    if dl_state['active']:
-        return jsonify({'error': 'Download already in progress'}), 400
-
-    data = request.get_json()
-    dest_folder = data.get('dest_folder', '')
-    files = data.get('files', [])  # [{name, url}]
-    download_delay = max(0, min(60, int(data.get('download_delay', 5))))
-
-    if not dest_folder or not os.path.isdir(dest_folder):
-        return jsonify({'error': 'Invalid destination folder'}), 400
-    if not files:
-        return jsonify({'error': 'No files specified'}), 400
-
-    dl_state['log'] = []
-    dl_state['active'] = True
-    dl_state['progress'] = None
-
-    def worker():
-        try:
-            dl = MyrientDownloader()
-            dl_state['downloader'] = dl
-
-            for f in files:
-                dl.queue_rom(rom_name=f['name'], url=f['url'], dest_folder=dest_folder)
-
-            def on_progress(prog):
-                dl_state['progress'] = {
-                    'current_index': prog.current_index,
-                    'total_count': prog.total_count,
-                    'completed': prog.completed,
-                    'failed': prog.failed,
-                    'cancelled': prog.cancelled,
-                    'current_rom': prog.current_task.rom_name if prog.current_task else '',
-                    'current_bytes': prog.current_task.downloaded_bytes if prog.current_task else 0,
-                    'current_total': prog.current_task.total_bytes if prog.current_task else 0,
-                    'current_status': prog.current_task.status.name if prog.current_task else '',
-                }
-
-            result = dl.start_downloads(on_progress, download_delay=download_delay)
-            dl_state['log'].append(
-                f"DONE: {result.completed} downloaded, {result.failed} failed")
-        except Exception as e:
-            dl_state['log'].append(f"ERROR: {e}")
-        finally:
-            dl_state['active'] = False
-            dl_state['downloader'] = None
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-
-    return jsonify({'success': True, 'queuing': len(files)})
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/progress')
 def myrient_progress():
-    return jsonify({
-        'active': dl_state['active'],
-        'progress': dl_state['progress'],
-        'log': dl_state['log'][-20:],  # last 20 entries
-    })
+    return jsonify({'active': False, 'progress': None, 'log': []})
 
 
 @app.route('/api/myrient/cancel', methods=['POST'])
 def myrient_cancel():
-    if dl_state['downloader']:
-        dl_state['downloader'].cancel()
-        return jsonify({'success': True})
-    return jsonify({'error': 'No active download'}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/pause', methods=['POST'])
 def myrient_pause():
-    if dl_state['downloader']:
-        dl_state['downloader'].pause()
-        return jsonify({'success': True})
-    return jsonify({'error': 'No active download'}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 @app.route('/api/myrient/resume', methods=['POST'])
 def myrient_resume():
-    if dl_state['downloader']:
-        dl_state['downloader'].resume()
-        return jsonify({'success': True})
-    return jsonify({'error': 'No active download'}), 400
+    return jsonify({'error': 'Direct download features were removed from the app'}), 410
 
 
 # ── Export Reports ─────────────────────────────────────────────
@@ -863,7 +673,7 @@ HTML_TEMPLATE = r'''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ROM Collection Manager v2</title>
+    <title>R0MM v2</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1013,6 +823,7 @@ HTML_TEMPLATE = r'''
             const [action, setAction] = useState('copy');
             const [scanArchives, setScanArchives] = useState(true);
             const [recursive, setRecursive] = useState(true);
+            const [blindmatchSystem, setBlindmatchSystem] = useState('');
             const [activeTab, setActiveTab] = useState('identified');
             const [selected, setSelected] = useState(new Set());
             const [notification, setNotification] = useState(null);
@@ -1095,6 +906,59 @@ HTML_TEMPLATE = r'''
                 const iv = setInterval(refreshStatus, 2000);
                 return () => clearInterval(iv);
             }, []);
+            // set descriptive hover tooltips for button actions
+            useEffect(() => {
+                const isPt = (navigator.language || '').toLowerCase().startsWith('pt');
+                const tipMapEn = {
+                    'Browse': 'Open the file browser to select a file or folder path.',
+                    'Add': 'Load the DAT file path into the active DAT list.',
+                    'Scan': 'Start scanning ROM files in the selected folder.',
+                    'Preview': 'Preview destination paths before organizing files.',
+                    'Organize': 'Execute organization using selected strategy and action.',
+                    'Undo': 'Undo the most recent organization operation.',
+                    'Refresh': 'Recompute missing ROMs from current data.',
+                    'Search Archive': 'Open Archive.org search tools for missing entries.',
+                    'Force Identify': 'Move selected unidentified files to identified list.',
+                    'Save Current': 'Save current DATs and scan results as a collection.',
+                    'Load': 'Load this collection into the current session.',
+                    'Remove': 'Remove this item from the current list.',
+                    'Collections': 'Open saved collections manager.',
+                    'DAT Library': 'Open DAT library manager.',
+                    'Cancel': 'Close this dialog without applying changes.',
+                    'Execute': 'Run this action now.',
+                    'Close': 'Close this dialog.'
+                };
+                const tipMapPt = {
+                    'Browse': 'Abre o navegador de arquivos para selecionar um caminho.',
+                    'Add': 'Carrega o caminho do DAT na lista ativa.',
+                    'Scan': 'Inicia o escaneamento de ROMs na pasta selecionada.',
+                    'Preview': 'Mostra destinos antes de organizar os arquivos.',
+                    'Organize': 'Executa a organização com a estratégia e ação escolhidas.',
+                    'Undo': 'Desfaz a operação de organização mais recente.',
+                    'Refresh': 'Recalcula ROMs faltantes com os dados atuais.',
+                    'Search Archive': 'Abre ferramentas de busca no Archive.org.',
+                    'Force Identify': 'Move arquivos não identificados para identificados.',
+                    'Save Current': 'Salva DATs e resultados atuais como coleção.',
+                    'Load': 'Carrega esta coleção na sessão atual.',
+                    'Remove': 'Remove este item da lista atual.',
+                    'Collections': 'Abre o gerenciador de coleções salvas.',
+                    'DAT Library': 'Abre o gerenciador da biblioteca de DAT.',
+                    'Cancel': 'Fecha esta janela sem aplicar alterações.',
+                    'Execute': 'Executa esta ação agora.',
+                    'Close': 'Fecha esta janela.'
+                };
+                const map = isPt ? tipMapPt : tipMapEn;
+                const applyTips = () => {
+                    document.querySelectorAll('button').forEach((b) => {
+                        const t = (b.innerText || '').trim();
+                        if (map[t]) b.title = map[t];
+                        else if (!b.title || !b.title.trim()) b.title = t || 'Action';
+                    });
+                };
+                applyTips();
+                const iv = setInterval(applyTips, 2000);
+                return () => clearInterval(iv);
+            }, []);
 
             useEffect(() => {
                 if (!status.scanning && (status.identified_count > 0 || status.unidentified_count > 0)) {
@@ -1122,7 +986,7 @@ HTML_TEMPLATE = r'''
             /* ── Scan ──────── */
             const startScan = async () => {
                 if (!romFolder) return notify('warning', 'Enter ROM folder path');
-                const res = await api.post('/api/scan', { folder: romFolder, scan_archives: scanArchives, recursive });
+                const res = await api.post('/api/scan', { folder: romFolder, scan_archives: scanArchives, recursive, blindmatch_system: blindmatchSystem });
                 if (res.error) notify('error', res.error);
                 else { notify('success', 'Scan started'); refreshStatus(); }
             };
@@ -1232,11 +1096,7 @@ HTML_TEMPLATE = r'''
 
             /* ── Myrient Browser ──────── */
             const openMyrientBrowser = async () => {
-                const res = await api.get('/api/myrient/systems');
-                setMyrientSystems(res.systems || []);
-                setMyrientFiles([]);
-                setMyrientSelectedSys('');
-                setShowMyrient(true);
+                notify('warning', 'Direct download was removed from the app');
             };
 
             const loadMyrientFiles = async (sysName) => {
@@ -1291,9 +1151,9 @@ HTML_TEMPLATE = r'''
                 }, 500);
             };
 
-            const cancelDl = async () => { await api.post('/api/myrient/cancel'); };
-            const pauseDl = async () => { await api.post('/api/myrient/pause'); };
-            const resumeDl = async () => { await api.post('/api/myrient/resume'); };
+            const cancelDl = async () => { notify('warning', 'Direct download was removed from the app'); };
+            const pauseDl = async () => { notify('warning', 'Direct download was removed from the app'); };
+            const resumeDl = async () => { notify('warning', 'Direct download was removed from the app'); };
 
             /* ── Filtering ──────── */
             const q = debouncedQuery.toLowerCase();
@@ -1489,7 +1349,7 @@ HTML_TEMPLATE = r'''
                                         <div className="flex gap-2 mt-2 items-center">
                                             <input type="text" value={dlDest} onChange={e => setDlDest(e.target.value)}
                                                 placeholder="Download destination folder..." className="flex-1 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs focus:outline-none focus:border-cyan-500" />
-                                            <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs">Browse</button>
+                                            <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs" title="Browse folder">Browse</button>
 
                                             <button onClick={() => {
                                                 const selected = [];
@@ -1518,7 +1378,7 @@ HTML_TEMPLATE = r'''
                                     <div className="flex gap-2 mt-1">
                                         <input type="text" value={dlDest} onChange={e => setDlDest(e.target.value)}
                                             placeholder="C:\path\to\roms" className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500" />
-                                        <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm">Browse</button>
+                                        <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Browse folder">Browse</button>
                                     </div>
                                 </div>
                                 <div>
@@ -1555,7 +1415,7 @@ HTML_TEMPLATE = r'''
                                     {!dlActive ? (
                                         <>
                                             <button onClick={() => setShowDownloadDialog(false)} className="px-4 py-2 bg-slate-700 rounded-lg text-sm">Close</button>
-                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download All Missing</button>
+                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download All Missing (removed)</button>
                                         </>
                                     ) : (
                                         <>
@@ -1575,14 +1435,14 @@ HTML_TEMPLATE = r'''
                             <div className="flex items-center gap-4">
                                 <div className="text-4xl">&#127918;</div>
                                 <div>
-                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">ROM Collection Manager</h1>
+                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">R0MM</h1>
                                     <p className="text-slate-400">v2 &mdash; Multi-DAT, Collections, Missing ROMs</p>
                                 </div>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={openCollections} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Collections</button>
                                 <button onClick={openDatLibrary} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">DAT Library</button>
-                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Myrient Browser</button>
+                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Myrient Browser (removed)</button>
                             </div>
                         </div>
 
@@ -1597,7 +1457,7 @@ HTML_TEMPLATE = r'''
                                     <input type="text" value={datPath} onChange={e => setDatPath(e.target.value)}
                                         placeholder="C:\path\to\nointro.dat"
                                         className="flex-1 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                    <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded-l-none rounded-r-lg">Browse</button>
+                                    <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
                                     <button onClick={loadDat} className="ml-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium transition text-sm">Add</button>
                                 </div>
                                 {(status.dats_loaded || []).length > 0 && (
@@ -1624,14 +1484,14 @@ HTML_TEMPLATE = r'''
                                     <input type="text" value={romFolder} onChange={e => setRomFolder(e.target.value)}
                                         placeholder="C:\path\to\roms"
                                         className="flex-1 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-emerald-500 text-sm" />
-                                    <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 bg-emerald-600 hover:bg-emerald-500 rounded-l-none rounded-r-lg">Browse</button>
+                                    <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 bg-emerald-600 hover:bg-emerald-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
                                     <button onClick={startScan} disabled={status.scanning}
                                         className="ml-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg font-medium transition flex items-center gap-2 text-sm">
                                         {status.scanning && <span className="loader"></span>}
                                         Scan
                                     </button>
                                 </div>
-                                <div className="flex gap-4 mb-3">
+                                <div className="flex gap-4 mb-3 items-center">
                                     <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
                                         <input type="checkbox" checked={scanArchives} onChange={e => setScanArchives(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
                                         Scan ZIPs
@@ -1640,6 +1500,9 @@ HTML_TEMPLATE = r'''
                                         <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
                                         Recursive
                                     </label>
+                                    <input type="text" value={blindmatchSystem} onChange={e => setBlindmatchSystem(e.target.value)}
+                                        placeholder="BlindMatch system (optional)" title="BlindMatch system name"
+                                        className="px-3 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-sm min-w-[260px]" />
                                 </div>
                                 {status.scanning && (
                                     <div className="space-y-2">
@@ -1707,7 +1570,7 @@ HTML_TEMPLATE = r'''
                                         <button onClick={() => setShowArchive(true)}
                                             className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">Search Archive.org</button>
                                         <button onClick={() => { setDlDest(romFolder || ''); setShowDownloadDialog(true); }}
-                                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download Missing</button>
+                                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download Missing (removed)</button>
                                     </div>
                                 )}
                             </div>
@@ -1849,7 +1712,7 @@ HTML_TEMPLATE = r'''
                                     { id: 'emulationstation', name: 'EmulationStation', desc: 'ES/RetroPie' },
                                     { id: 'flat', name: 'Flat', desc: 'Renamed only' },
                                 ].map(s => (
-                                    <button key={s.id} onClick={() => setStrategy(s.id)}
+                                    <button key={s.id} onClick={() => setStrategy(s.id)} title={`Use strategy: ${s.name}. ${s.desc}.`}
                                         className={`p-3 rounded-lg border text-left transition ${
                                             strategy === s.id ? 'bg-cyan-900/30 border-cyan-500 text-cyan-300' : 'bg-slate-900/30 border-slate-600 hover:border-slate-500'
                                         }`}>
@@ -1865,32 +1728,32 @@ HTML_TEMPLATE = r'''
                                         <input type="text" value={outputFolder} onChange={e => setOutputFolder(e.target.value)}
                                             placeholder="C:\path\to\output"
                                             className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm">Browse</button>
+                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Choose the output folder for organized files">Browse</button>
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm text-slate-400 mb-2">Action</label>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setAction('copy')}
+                                        <button onClick={() => setAction('copy')} title="Copy files to output and keep originals"
                                             className={`px-4 py-2 rounded-lg border transition text-sm ${
                                                 action === 'copy' ? 'bg-blue-900/30 border-blue-500 text-blue-300' : 'bg-slate-900/30 border-slate-600'
                                             }`}>Copy</button>
-                                        <button onClick={() => setAction('move')}
+                                        <button onClick={() => setAction('move')} title="Move files to output and remove originals"
                                             className={`px-4 py-2 rounded-lg border transition text-sm ${
                                                 action === 'move' ? 'bg-amber-900/30 border-amber-500 text-amber-300' : 'bg-slate-900/30 border-slate-600'
                                             }`}>Move</button>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={previewOrganize} disabled={results.identified.length === 0}
+                                    <button onClick={previewOrganize} disabled={results.identified.length === 0} title="Show destination preview before organizing"
                                         className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg font-medium transition text-sm">
                                         Preview
                                     </button>
-                                    <button onClick={doOrganize} disabled={results.identified.length === 0}
+                                    <button onClick={doOrganize} disabled={results.identified.length === 0} title="Execute organization now"
                                         className="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 rounded-lg font-medium transition shadow-lg shadow-cyan-900/30 text-sm">
                                         Organize!
                                     </button>
-                                    <button onClick={undoOrganize}
+                                    <button onClick={undoOrganize} title="Undo the most recent organization operation"
                                         className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium transition text-sm">
                                         Undo
                                     </button>
@@ -1899,7 +1762,7 @@ HTML_TEMPLATE = r'''
                         </div>
 
                         <p className="text-center text-slate-500 text-sm">
-                            ROM Collection Manager v2 &mdash; Supports No-Intro, Redump, TOSEC and any XML-based DAT files
+                            R0MM v2 &mdash; Supports No-Intro, Redump, TOSEC and any XML-based DAT files
                         </p>
                     </div>
                 </div>
@@ -1916,7 +1779,9 @@ HTML_TEMPLATE = r'''
 
 def run_server(host='127.0.0.1', port=5000, debug=False):
     """Run the web server"""
-    print(f"ROM Collection Manager v2 - Web Interface")
+    logger = setup_runtime_monitor()
+    monitor_action(f"run_server called: host={host} port={port} debug={debug}", logger=logger)
+    print(f"R0MM v2 - Web Interface")
     print(f"=" * 50)
     print(f"Open in your browser: http://{host}:{port}")
     print(f"Press Ctrl+C to stop")
