@@ -1,0 +1,367 @@
+# R0MM v2 Project Memory & Continuity Prompt
+
+Use this to onboard a new agent into the R0MM v2 project context.
+
+---
+
+## PROJECT OVERVIEW
+
+**R0MM v2** is a ROM Organization Manager with a modern UI/UX overhaul (as of 2026-02-23). It manages ROM libraries across 3 active frontends:
+- **Web**: Single-file Flask app with React via CDN (no npm/bundler)
+- **Flet**: Cross-platform desktop GUI (Python/Flutter)
+- **PySide6**: Native Windows desktop GUI
+
+**Tkinter is excluded** from all active development.
+
+**Repository**: GitHub master branch at `D:\1 romm\romm`
+
+---
+
+## UNIFIED DESIGN SYSTEM (CRITICAL)
+
+### Single Source of Truth
+All frontends consume a **unified Catppuccin Mocha color palette** from `rommanager/shared_config.py`:
+
+```python
+THEME = {
+    "bg":       "#1e1e2e",   # Main background
+    "bg_dim":   "#181825",   # Dimmed background
+    "bg_deep":  "#11111b",   # Deep background
+    "surface0": "#313244",   # Surface layer 1
+    "surface1": "#45475a",   # Surface layer 2
+    "surface2": "#585b70",   # Surface layer 3
+    "text":     "#cdd6f4",   # Primary text
+    "subtext1": "#bac2de",   # Secondary text
+    "subtext0": "#a6adc8",   # Tertiary text
+    "overlay2": "#9399b2",   # Overlay dark
+    "overlay1": "#7f849c",   # Overlay medium
+    "overlay0": "#6c7086",   # Overlay light
+    "primary":  "#cba6f7",   # Purple (primary accent)
+    "secondary":"#89b4fa",   # Blue (secondary accent)
+    "success":  "#a6e3a1",   # Green
+    "warning":  "#f9e2af",   # Yellow
+    "error":    "#f38ba8",   # Red/Pink
+    "info":     "#94e2d5",   # Cyan
+    "peach":    "#fab387",   # Peach
+    "pink":     "#f5c2e7",   # Pink
+    "sky":      "#89dceb",   # Sky blue
+    "lavender": "#b4befe",   # Lavender
+    "flamingo": "#f2cdcd",   # Flamingo
+    "rosewater":"#f5e0dc",   # Rosewater
+    "maroon":   "#eba0ac",   # Maroon
+    "sapphire": "#74c7ec",   # Sapphire
+}
+```
+
+### How Each Frontend Consumes THEME
+
+**Web (Flask/React via CDN):**
+- CSS `:root` block defines 26 custom properties (e.g., `--bg: #1e1e2e`)
+- All component styles use inline `style={{backgroundColor: 'var(--bg)'}}` (NOT Tailwind classes)
+- Zero `slate-` or other Tailwind color classes remain in the file
+- Toast notifications, empty states, skeleton loaders all use CSS vars
+
+**Flet (Python/Flutter):**
+- Backward-compatible `MOCHA` alias dict maps old key names to THEME tokens
+- Example: `MOCHA["mauve"] = THEME["primary"]`, `MOCHA["base"] = THEME["bg"]`
+- This ensures no downstream code changes needed; just import MOCHA from shared_config
+- Game cards, detail panels, and all UI elements reference MOCHA colors
+
+**PySide6 (Qt/Windows):**
+- Import THEME directly from shared_config
+- Enhanced QSS stylesheet uses THEME tokens in dynamic string construction
+- QPushButton, QTableWidget, QGroupBox all styled with THEME colors
+- QStackedWidget for empty state / content switching
+
+### Ensure App Directories
+`shared_config.py` has `ensure_app_directories()` function that creates:
+- `APP_DATA_DIR/cache/thumbnails` ← for Libretro Thumbnails cache
+
+---
+
+## LIBRETRO THUMBNAILS INTEGRATION
+
+### New Module: `rommanager/thumbnail_service.py`
+
+**Purpose**: Async download and local cache of box art from Libretro Thumbnails GitHub repo.
+
+**Key Class**: `ThumbnailService`
+
+```python
+service = ThumbnailService(cache_dir="/path/to/cache")
+path = service.get_thumbnail_path(system="snes", game_name="Super Mario Bros")
+# Returns: "/path/to/cache/snes/Super_Mario_Bros.png" or None
+```
+
+**System Mappings**: 35 systems (snes, nes, genesis, playstation, n64, etc.)
+
+**Features**:
+- **Async batch downloads** with `aiohttp` (max 5 concurrent)
+- **Local file cache** (check cache first, avoid re-downloading)
+- **Negative cache** (`.not_found.json` with 7-day expiry for 404 results)
+- **Sanitization** (game names normalized: spaces→underscores, special chars removed)
+- **URL pattern**: `https://raw.githubusercontent.com/libretro-thumbnails/{system}/master/Named_Boxarts/{game_name}.png`
+
+**Methods**:
+- `get_thumbnail_path(system, game_name)` → cached file path or None
+- `fetch_thumbnail(system, game_name)` → async download one
+- `fetch_batch(games_list)` → async download multiple
+- `fetch_batch_sync(games_list)` → blocking version (for daemon threads)
+- `get_placeholder_data()` → fallback letter placeholder as base64 data URI
+
+**Integration Points**:
+- Web: `/api/thumbnail/<system>/<game_name>` Flask route serves cached files
+- Flet: game_card() displays ft.Image with cached path or letter placeholder
+- PySide6: detail panel shows QPixmap thumbnail or letter initial
+
+---
+
+## WEB FRONTEND (`rommanager/web.py`)
+
+### Architecture
+- Single Flask + React (via CDN) file (~2059 lines)
+- No npm, no bundler, no build step
+- All React components defined as JS strings in Flask's `render_template_string()`
+
+### Key Components
+
+**ToastProvider / useToast**
+- React Context for stacking notifications
+- Auto-dismiss after 3 seconds
+- Click-to-dismiss
+- Progress bar animation
+- Replace all `notify()` calls with `const toast = useToast(); toast(message, type)`
+
+**PosterCard**
+- Grid view card component
+- Displays thumbnail image from `/api/thumbnail/<system>/<game_name>`
+- Fallback: colored initial (first letter) in gradient background
+- Shows game name, system, region badge
+- Used in Identified tab when `viewMode === 'grid'`
+
+**Grid/List Toggle**
+- Two buttons in Identified tab: "List" / "Grid"
+- `viewMode` state: `'list'` | `'grid'`
+- `viewMode === 'grid'` → PosterCard components in flex-wrap layout
+- `viewMode === 'list'` → Table view (original)
+
+**Dropzone**
+- Drag-and-drop areas for DAT files and ROM folders
+- Visual feedback on hover (`.dragover` class)
+- One after DAT input, one after ROM folder input
+
+**SkeletonTable / SkeletonGrid**
+- Animated pulse-loading placeholders
+- Shown during scan (`status.scanning === true`)
+- Replace actual content temporarily
+- Use CSS animation `skeleton-pulse` (keyframes in style block)
+
+**EmptyState**
+- Contextual empty states with SVG icons
+- Three variants:
+  - **Identified tab**: gamepad icon, "No identified ROMs", prompt to load DAT + scan
+  - **Unidentified tab**: search_off icon, "No unidentified files", context message
+  - **Missing tab**: folder_search icon, "No missing ROMs", prompt to load DATs + scan
+- Optional CTA button with action callback
+
+### Flask Routes
+- `/api/config` → Returns app config (REGION_COLORS, THEME, etc.)
+- `/api/import` → POST form data (DAT files, ROM folders)
+- `/api/scan` → Trigger background scan, returns status
+- `/api/thumbnail/<system>/<game_name>` → Serve cached PNG via `send_file()`
+
+### Background Task: `_bg_fetch_thumbnails()`
+- Spawned as daemon thread after scan completes
+- Calls `ThumbnailService.fetch_batch_sync()` for all identified ROMs
+- Non-blocking; doesn't interrupt UI
+
+---
+
+## FLET FRONTEND (`rommanager/gui_flet.py`)
+
+### Architecture
+- Single file (~1850 lines)
+- Entry point: `main(page)` called by Flet app runner
+- Uses MOCHA backward-compatible alias dict for colors
+
+### Key Features
+
+**MOCHA Alias Pattern**
+```python
+from rommanager.shared_config import THEME, THUMBNAILS_DIR
+MOCHA = {
+    "mauve": THEME["primary"],
+    "base": THEME["bg"],
+    "surface0": THEME["surface0"],
+    # ... etc
+}
+```
+Ensures zero downstream code changes when shared_config.THEME updates.
+
+**Game Cards with Thumbnails**
+- `game_card()` function displays:
+  - `ft.Image` with cached thumbnail (from ThumbnailService)
+  - Fallback: letter placeholder if no thumbnail available
+  - Game name, system, region badge
+
+**DetailPanel Glassmorphism**
+- `bgcolor=ft.Colors.with_opacity(0.88, MOCHA["mantle"])` ← simulated transparency
+- `border=ft.border.all(2, MOCHA["mauve"])` ← accent border
+- Play button (disabled placeholder for now)
+- Hover scale micro-interaction: `scale(1.02)` on `_card_hover()`
+
+**Empty States**
+- Enhanced with optional `tip` parameter
+- 100px icons (large)
+- Contextual heading + subtext
+- CTA buttons where appropriate (e.g., "Go to Import & Scan")
+
+**Background Thumbnail Fetch**
+- `_fetch_thumbnails_background()` method on ImportScanView
+- Spawned after scan completes
+- Non-blocking
+
+### Critical Fix (Feb 2026)
+- `ft.Button` does NOT support `icon_size` parameter (only `ft.IconButton` does)
+- Remove `icon_size=ICON_BUTTON_SIZE` from all `ft.Button()` calls
+- Keep `icon_size` only on `ft.IconButton()`
+
+---
+
+## PYSIDE6 FRONTEND (`rommanager/gui_pyside6.py`)
+
+### Architecture
+- Single file (~790 lines)
+- Qt-based native Windows GUI
+- Uses THEME import directly from shared_config
+
+### Key Features
+
+**Enhanced QSS Stylesheet**
+- `_apply_theme()` method sets comprehensive QSS on window
+- Covers: QMainWindow, QWidget, QGroupBox, QPushButton (normal/hover/disabled), QTableWidget, QHeaderView, QScrollBar
+- Uses THEME tokens dynamically (e.g., `THEME["primary"]`)
+- Inter font family
+
+**QStackedWidget for Library Tab**
+- Page 0: Empty state (gamepad icon, "No ROMs Loaded", "Go to Import" button)
+- Page 1: QSplitter with 3 tables (left) + detail panel (right)
+- `_refresh_all()` toggles pages based on data presence
+
+**Detail Panel**
+- `self.detail_art`: QLabel (200x240) for thumbnail QPixmap
+- `self.detail_game_label`: Game name
+- `self.detail_system_label`: System name
+- `self.detail_info_label`: Region/size/CRC32
+- Letter placeholder if no thumbnail
+
+**_create_empty_state() Helper**
+- Reusable method creating centered widget
+- Icon + heading + subtext + optional CTA button
+- All text styled with MOCHA colors
+
+---
+
+## I18N TRANSLATIONS (`rommanager/i18n.py`)
+
+**Added 12 translation keys** (English + Portuguese-BR):
+
+```
+empty_no_dats_heading
+empty_no_dats_subtext
+empty_no_dats_cta
+empty_no_scan_heading
+empty_no_scan_subtext
+empty_no_scan_cta
+empty_no_results_heading
+empty_no_results_subtext
+empty_identified_subtext
+empty_unidentified_subtext
+empty_missing_subtext
+```
+
+Use `_tr("key_name")` to fetch translated string in frontends.
+
+---
+
+## DEPENDENCIES (`requirements.txt`)
+
+Added for thumbnails feature:
+```
+aiohttp>=3.9.0
+```
+
+All async HTTP operations use aiohttp with semaphore-based concurrency (max 5 requests).
+
+---
+
+## COMMON PATTERNS & GOTCHAS
+
+### ✅ DO
+- Import THEME from shared_config in all frontends
+- Use CSS custom properties (`:root` vars) in Web frontend
+- Check `THUMBNAILS_DIR` existence in ensure_app_directories()
+- Use `_tr()` for all user-visible strings
+- Spawn thumbnail fetches as daemon threads (non-blocking)
+- Test each frontend independently before committing
+
+### ❌ DON'T
+- Use Tailwind color classes in Web frontend (must be CSS vars)
+- Hardcode hex colors—always reference THEME or MOCHA
+- Use `icon_size` on `ft.Button` (only on `ft.IconButton`)
+- Forget to sanitize game names in thumbnail lookups
+- Store sensitive data in public GitHub repos
+- Modify git config or use destructive git commands without explicit user permission
+
+---
+
+## TECHNICAL DEBT & FUTURE WORK
+
+None currently identified. All 19 planned tasks completed.
+
+---
+
+## HOW TO CONTINUE THIS PROJECT
+
+### To Add New Features
+1. Read this prompt fully
+2. Check `docs/plans/` for existing design decisions
+3. Implement across all 3 frontends (Web, Flet, PySide6)
+4. Use THEME for colors, `_tr()` for strings
+5. Test each frontend independently
+6. Commit with descriptive message + co-author line
+
+### To Debug Issues
+1. Use `systematic-debugging` skill (ALWAYS)
+2. Find root cause before proposing fixes
+3. Test minimally; don't bundle multiple fixes
+4. Verify fix works; run import tests
+
+### To Deploy
+1. Ensure all tests pass
+2. Commit to development branch if applicable
+3. Create PR with summary of changes
+4. Merge to master after review
+5. Tag release if appropriate
+
+---
+
+## QUICK REFERENCE
+
+| Item | Location |
+|------|----------|
+| Design System (THEME) | `rommanager/shared_config.py` |
+| Thumbnails Service | `rommanager/thumbnail_service.py` |
+| Web Frontend | `rommanager/web.py` |
+| Flet Frontend | `rommanager/gui_flet.py` |
+| PySide6 Frontend | `rommanager/gui_pyside6.py` |
+| Translations | `rommanager/i18n.py` |
+| Design Doc | `docs/plans/2026-02-23-unified-design-system-design.md` |
+| Implementation Plan | `docs/plans/2026-02-23-unified-design-system.md` |
+| Project Root | `D:\1 romm\romm` |
+
+---
+
+**Last Updated**: 2026-02-23  
+**Status**: All redesign tasks complete, pushed to master  
+**Next Agent**: Use this prompt to onboard and maintain project continuity
