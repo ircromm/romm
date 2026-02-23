@@ -1,9 +1,10 @@
 """Launcher window to choose which interface to run."""
 import tkinter as tk
-from tkinter import ttk
 import sys
 import webbrowser
 import threading
+import subprocess
+from pathlib import Path
 
 from .web import run_server
 from .gui import run_gui, GUI_AVAILABLE
@@ -49,6 +50,41 @@ def open_flet_mode(root):
         print(_tr("install_flet"))
         print(f"Details: {exc}")
         sys.exit(1)
+
+
+def open_flutter_frontend_mode(root):
+    """Start Flask backend and launch the new Flutter frontend."""
+    monitor_action("launcher click: flutter_frontend")
+    root.destroy()
+    print(_tr("launcher_flutter_start"))
+
+    backend_thread = threading.Thread(
+        target=lambda: run_server(shutdown_on_idle=False),
+        daemon=True,
+    )
+    backend_thread.start()
+
+    flutter_project_root = Path(__file__).resolve().parent.parent
+    flutter_command = [
+        "flutter",
+        "run",
+        "-d",
+        "chrome",
+        "--dart-define",
+        "R0MM_API_BASE=http://127.0.0.1:5000/api",
+    ]
+    try:
+        subprocess.run(flutter_command, check=True, cwd=str(flutter_project_root))
+    except FileNotFoundError:
+        print(_tr("error_flutter_unavailable"))
+        print(_tr("install_flutter"))
+        print(_tr("launcher_web_fallback"))
+        webbrowser.open("http://127.0.0.1:5000")
+        backend_thread.join()
+    except subprocess.CalledProcessError as exc:
+        print(_tr("error_flutter_failed"))
+        print(f"Details: {exc}")
+        sys.exit(exc.returncode or 1)
 
 
 
@@ -113,15 +149,15 @@ def run_launcher():
     attach_tk_click_monitor(root)
     root.title(_tr("title_launcher"))
     monitor_action("launcher opened")
-    root.geometry("460x390")
+    root.geometry("560x520")
     root.resizable(False, False)
     
     # Center window
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    x = (screen_width - 460) // 2
-    y = (screen_height - 390) // 2
-    root.geometry(f"460x390+{x}+{y}")
+    x = (screen_width - 560) // 2
+    y = (screen_height - 520) // 2
+    root.geometry(f"560x520+{x}+{y}")
     
     lang_var = tk.StringVar(value=_safe_get_language())
 
@@ -134,40 +170,61 @@ def run_launcher():
     menubar.add_cascade(label=_tr("menu_language"), menu=lang_menu)
     root.config(menu=menubar)
 
-    # Styles
-    style = ttk.Style()
-    style.configure('TButton', font=('Segoe UI', 11), padding=10)
-    style.configure('Header.TLabel', font=('Segoe UI', 16, 'bold'))
-    
-    # Content
-    frame = ttk.Frame(root, padding=20)
-    frame.pack(fill=tk.BOTH, expand=True)
-    
-    ttk.Label(frame, text=_tr("title_main"), 
-             style='Header.TLabel').pack(pady=(10, 5))
-    ttk.Label(frame, text=_tr("choose_interface"),
-             font=('Segoe UI', 10)).pack(pady=(0, 20))
-    
-    # Buttons
-    btn_frame = ttk.Frame(frame)
-    btn_frame.pack(fill=tk.BOTH, expand=True)
-    
-    ttk.Button(btn_frame, text=_tr("launcher_flet"),
-              command=lambda: open_flet_mode(root)).pack(fill=tk.X, pady=5)
+    root.configure(bg="#11111b")
 
-    ttk.Button(btn_frame, text="PySide6 Desktop (new)",
-              command=lambda: open_pyside6_mode(root)).pack(fill=tk.X, pady=5)
+    frame = tk.Frame(root, bg="#1e1e2e", bd=0, highlightthickness=1, highlightbackground="#313244")
+    frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
 
-    ttk.Button(btn_frame, text=_tr("launcher_tk"),
-              command=lambda: open_desktop_mode(root)).pack(fill=tk.X, pady=5)
+    tk.Label(
+        frame,
+        text=_tr("title_main"),
+        bg="#1e1e2e",
+        fg="#cdd6f4",
+        font=("Segoe UI", 26, "bold"),
+    ).pack(pady=(24, 6))
+    tk.Label(
+        frame,
+        text=_tr("choose_interface"),
+        bg="#1e1e2e",
+        fg="#a6adc8",
+        font=("Segoe UI", 11),
+    ).pack(pady=(0, 16))
 
-    ttk.Button(btn_frame, text=_tr("launcher_web"),
-              command=lambda: open_web_mode(root)).pack(fill=tk.X, pady=5)
+    btn_frame = tk.Frame(frame, bg="#1e1e2e")
+    btn_frame.pack(fill=tk.BOTH, expand=True, padx=28, pady=(4, 12))
 
-    ttk.Button(btn_frame, text=_tr("launcher_cli"),
-              command=lambda: open_cli_mode(root)).pack(fill=tk.X, pady=5)
-    
-    ttk.Label(frame, text=f"ver {__version__}", font=('Segoe UI', 8), 
-             foreground='gray').pack(side=tk.BOTTOM)
+    button_options = [
+        (_tr("launcher_flutter"), lambda: open_flutter_frontend_mode(root)),
+        (_tr("launcher_flet"), lambda: open_flet_mode(root)),
+        ("🧩 PySide6 Desktop", lambda: open_pyside6_mode(root)),
+        (_tr("launcher_tk"), lambda: open_desktop_mode(root)),
+        (_tr("launcher_web"), lambda: open_web_mode(root)),
+        (_tr("launcher_cli"), lambda: open_cli_mode(root)),
+    ]
+
+    for text, command in button_options:
+        tk.Button(
+            btn_frame,
+            text=text,
+            command=command,
+            bg="#313244",
+            fg="#cdd6f4",
+            activebackground="#45475a",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            bd=0,
+            cursor="hand2",
+            font=("Segoe UI", 11, "bold"),
+            height=2,
+            padx=16,
+        ).pack(fill=tk.X, pady=6)
+
+    tk.Label(
+        frame,
+        text=f"ver {__version__}",
+        bg="#1e1e2e",
+        fg="#6c7086",
+        font=("Segoe UI", 9),
+    ).pack(side=tk.BOTTOM, pady=(8, 16))
     
     root.mainloop()
