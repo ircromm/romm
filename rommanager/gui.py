@@ -147,24 +147,26 @@ class ROMManagerGUI:
         self.colors = {
             'bg': '#1e1e2e', 'fg': '#cdd6f4', 'accent': '#89b4fa',
             'success': '#a6e3a1', 'warning': '#f9e2af', 'error': '#f38ba8',
-            'surface': '#313244',
+            'surface': '#313244', 'surface_alt': '#45475a',
         }
         self.root.configure(bg=self.colors['bg'])
         style.configure('TFrame', background=self.colors['bg'])
         style.configure('TLabel', background=self.colors['bg'], foreground=self.colors['fg'])
         style.configure('TLabelframe', background=self.colors['bg'], foreground=self.colors['fg'])
         style.configure('TLabelframe.Label', background=self.colors['bg'],
-                        foreground=self.colors['accent'], font=('Segoe UI', 10, 'bold'))
-        style.configure('Header.TLabel', font=('Segoe UI', 18, 'bold'), foreground=self.colors['accent'])
-        style.configure('SectionTitle.TLabel', font=('Segoe UI', 13, 'bold'), foreground=self.colors['accent'])
-        style.configure('Subtle.TLabel', font=('Segoe UI', 9), foreground=self.colors['fg'])
-        style.configure('Stats.TLabel', font=('Segoe UI', 11))
+                        foreground=self.colors['accent'], font=('Inter', 10, 'bold'))
+        style.configure('Header.TLabel', font=('Inter', 18, 'bold'), foreground=self.colors['accent'])
+        style.configure('SectionTitle.TLabel', font=('Inter', 13, 'bold'), foreground=self.colors['accent'])
+        style.configure('Subtle.TLabel', font=('Inter', 9), foreground=self.colors['fg'])
+        style.configure('Stats.TLabel', font=('Inter', 11))
         style.configure('Treeview', background=self.colors['surface'], foreground=self.colors['fg'],
-                        fieldbackground=self.colors['surface'], font=('Segoe UI', 9))
+                        fieldbackground=self.colors['surface'], font=('Inter', 9))
         style.configure('Treeview.Heading', background=self.colors['bg'],
-                        foreground=self.colors['accent'], font=('Segoe UI', 10, 'bold'))
+                        foreground=self.colors['accent'], font=('Inter', 10, 'bold'), borderwidth=0, relief='flat')
         style.map('Treeview', background=[('selected', self.colors['accent'])])
-        style.configure('Primary.TButton', font=('Segoe UI', 10, 'bold'))
+        style.configure('Primary.TButton', font=('Inter', 10, 'bold'), borderwidth=0, relief='flat')
+        style.configure('TButton', borderwidth=0, relief='flat', padding=(10, 6))
+        style.configure('TRadiobutton', background=self.colors['bg'], foreground=self.colors['fg'])
 
     # ── Menu ──────────────────────────────────────────────────────
 
@@ -275,7 +277,7 @@ class ROMManagerGUI:
         dat_sb = ttk.Scrollbar(dat_list_frame, orient=tk.VERTICAL)
         self.dat_listbox = tk.Listbox(dat_list_frame, height=5, bg=self.colors['surface'],
                                       fg=self.colors['fg'], selectbackground=self.colors['accent'],
-                                      font=('Segoe UI', 9), yscrollcommand=dat_sb.set)
+                                      font=('Inter', 9), yscrollcommand=dat_sb.set)
         dat_sb.config(command=self.dat_listbox.yview)
         dat_sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.dat_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)

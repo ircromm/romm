@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
+from urllib.parse import quote
 from typing import List, Optional, Dict, Any
 
 import flet as ft
@@ -196,6 +197,16 @@ def _card_container(content, **kwargs):
     return ft.Container(content=content, **defaults)
 
 
+
+
+def _libretro_thumb_url(system_name: str, game_name: str) -> str:
+    """Best-effort Libretro thumbnail URL for box art preview."""
+    if not system_name or not game_name:
+        return ""
+    system_slug = quote(system_name.replace(" ", "_"))
+    game_slug = quote(game_name.replace(" ", "_"))
+    return f"https://thumbnails.libretro.com/{system_slug}/Named_Boxarts/{game_slug}.png"
+
 # ─── Application State ─────────────────────────────────────────────────────────
 class AppState:
     """Central application state shared across all views."""
@@ -340,6 +351,7 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
     region = rom.region if rom else ""
     system = rom.system_name if rom else ""
     first_letter = game_name[0].upper() if game_name else "?"
+    box_art_url = _libretro_thumb_url(system, game_name)
 
     return ft.Container(
         content=ft.Stack(
@@ -348,10 +360,20 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
                     content=ft.Column(
                         controls=[
                             ft.Container(
-                                content=ft.Text(
-                                    first_letter, size=36,
-                                    weight=ft.FontWeight.BOLD,
-                                    color=MOCHA["overlay0"],
+                                content=ft.Stack(
+                                    controls=[
+                                        ft.Image(src=box_art_url, fit=ft.ImageFit.COVER, expand=True),
+                                        ft.Container(
+                                            content=ft.Text(
+                                                first_letter,
+                                                size=36,
+                                                weight=ft.FontWeight.BOLD,
+                                                color=MOCHA["overlay0"],
+                                            ),
+                                            alignment=ft.Alignment(0, 0),
+                                            visible=not bool(box_art_url),
+                                        ),
+                                    ]
                                 ),
                                 bgcolor=MOCHA["surface0"],
                                 border_radius=ft.border_radius.only(top_left=8, top_right=8),
@@ -382,6 +404,8 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
         ),
         on_click=lambda e: on_click(scanned),
         animate=ft.Animation(200, ft.AnimationCurve.EASE_IN_OUT),
+        animate_scale=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
+        on_hover=lambda e: (setattr(e.control, "scale", 1.02 if e.data == "true" else 1.0), e.control.update()),
         ink=True,
     )
 
@@ -404,8 +428,9 @@ class DetailPanel(ft.Container):
 
         self.width = 400
         self.min_width = 384
-        self.bgcolor = MOCHA["mantle"]
+        self.bgcolor = ft.Colors.with_opacity(0.88, MOCHA["mantle"])
         self.border = ft.Border.only(left=ft.BorderSide(1, MOCHA["surface1"]))
+        self.blur = ft.Blur(14, 14)
         self.padding = ft.Padding.all(SPACE_24)
         self.visible = False
         self.animate_opacity = ft.Animation(250, ft.AnimationCurve.EASE_OUT)
@@ -447,6 +472,7 @@ class DetailPanel(ft.Container):
             ], spacing=2))
 
         self.action_row.controls = [
+            ft.Button("Play", icon=ft.Icons.PLAY_ARROW, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["green"], color=MOCHA["crust"], on_click=self._play_game),
             ft.Button(_tr("flet_open_folder"), icon=ft.Icons.FOLDER_OPEN, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["surface0"], color=MOCHA["text"], on_click=self._open_folder),
             ft.Button(_tr("flet_copy_crc"), icon=ft.Icons.CONTENT_COPY, icon_size=ICON_BUTTON_SIZE, bgcolor=MOCHA["surface0"], color=MOCHA["text"], on_click=self._copy_crc),
         ]
@@ -468,6 +494,10 @@ class DetailPanel(ft.Container):
                     os.startfile(folder)
                 else:
                     os.system(f'xdg-open "{folder}"')
+
+
+    def _play_game(self, e):
+        _show_snack(self._pg, "Play integration coming soon.", MOCHA["green"])
 
     async def _copy_crc(self, e):
         if self._scanned:
@@ -1656,6 +1686,7 @@ def main(page: ft.Page):
     page.padding = 0
     page.spacing = 0
     page.theme_mode = ft.ThemeMode.DARK
+    page.theme = ft.Theme(font_family="Inter")
     page.window.width = 1300
     page.window.height = 850
     page.window.min_width = 900

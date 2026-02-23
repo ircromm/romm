@@ -763,13 +763,36 @@ HTML_TEMPLATE = r'''
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        mocha: {
+                            base: '#1e1e2e', mantle: '#181825', crust: '#11111b',
+                            surface0: '#313244', surface1: '#45475a', surface2: '#585b70',
+                            text: '#cdd6f4', subtext0: '#a6adc8', subtext1: '#bac2de',
+                            overlay0: '#6c7086', overlay1: '#7f849c',
+                            blue: '#89b4fa', mauve: '#cba6f7', green: '#a6e3a1',
+                            red: '#f38ba8', yellow: '#f9e2af', peach: '#fab387', teal: '#94e2d5',
+                        },
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                },
+            },
+        };
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; background: #1e1e2e; color: #cdd6f4; }
         .loader { border: 3px solid #334155; border-top: 3px solid #22d3ee; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-        .modal-content { background: #1e293b; border: 1px solid #475569; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 24px; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(17, 17, 27, 0.75); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .modal-content { background: #181825; border: 1px solid #45475a; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 24px; }
+        .skeleton { animation: pulse 1.5s ease-in-out infinite; background: linear-gradient(90deg, #313244 25%, #45475a 37%, #313244 63%); background-size: 400% 100%; }
+        @keyframes pulse { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
     </style>
 </head>
 <body>
@@ -864,19 +887,56 @@ HTML_TEMPLATE = r'''
             return <span className={`px-2 py-0.5 rounded text-xs ${c.bg} ${c.fg}`}>{region || 'Unknown'}</span>;
         }
 
-        /* ── Notification ─────────────────────── */
-        function Notification({ notification, onClose }) {
-            if (!notification) return null;
-            const colors = {
-                success: 'bg-emerald-900/90 border-emerald-600',
-                error:   'bg-red-900/90 border-red-600',
-                warning: 'bg-amber-900/90 border-amber-600',
-                info:    'bg-sky-900/90 border-sky-600',
+        function SkeletonRows({ rows = 6 }) {
+            return (
+                <div className="p-4 space-y-3">
+                    {Array.from({ length: rows }).map((_, idx) => (
+                        <div key={idx} className="h-10 rounded-lg skeleton" />
+                    ))}
+                </div>
+            );
+        }
+
+        function DropZone({ label, onFiles, hint }) {
+            const [dragging, setDragging] = useState(false);
+            const consume = (e) => { e.preventDefault(); e.stopPropagation(); };
+            const handleDrop = (e) => {
+                consume(e);
+                setDragging(false);
+                const fileList = Array.from(e.dataTransfer.files || []);
+                if (fileList.length) onFiles(fileList);
             };
             return (
-                <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 border ${colors[notification.type] || colors.info}`}>
-                    <span>{notification.message}</span>
-                    <button onClick={onClose} className="ml-2 hover:opacity-70">&#x2715;</button>
+                <div
+                    onDragEnter={(e) => { consume(e); setDragging(true); }}
+                    onDragOver={consume}
+                    onDragLeave={(e) => { consume(e); setDragging(false); }}
+                    onDrop={handleDrop}
+                    className={`mt-2 rounded-lg border-2 border-dashed p-3 text-sm transition ${dragging ? 'border-mocha-mauve bg-mocha-surface0/80 text-mocha-text' : 'border-mocha-surface1 text-mocha-subtext0'}`}
+                >
+                    <div className="font-medium">{label}</div>
+                    <div className="text-xs mt-1 text-mocha-overlay1">{hint}</div>
+                </div>
+            );
+        }
+
+        /* ── Notification ─────────────────────── */
+        function NotificationStack({ notifications, onClose }) {
+            if (!notifications.length) return null;
+            const colors = {
+                success: 'bg-mocha-green/25 border-mocha-green',
+                error:   'bg-mocha-red/25 border-mocha-red',
+                warning: 'bg-mocha-yellow/25 border-mocha-yellow',
+                info:    'bg-mocha-blue/25 border-mocha-blue',
+            };
+            return (
+                <div className="fixed top-4 right-4 z-50 flex max-w-sm flex-col gap-2">
+                    {notifications.map((notification) => (
+                        <div key={notification.id} className={`px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 border backdrop-blur ${colors[notification.type] || colors.info}`}>
+                            <span className="text-sm">{notification.message}</span>
+                            <button onClick={() => onClose(notification.id)} className="ml-2 hover:opacity-70">&#x2715;</button>
+                        </div>
+                    ))}
                 </div>
             );
         }
@@ -911,7 +971,8 @@ HTML_TEMPLATE = r'''
             const [blindmatchSystem, setBlindmatchSystem] = useState('');
             const [activeTab, setActiveTab] = useState('identified');
             const [selected, setSelected] = useState(new Set());
-            const [notification, setNotification] = useState(null);
+            const [notifications, setNotifications] = useState([]);
+            const [identifiedView, setIdentifiedView] = useState('list');
             const [searchQuery, setSearchQuery] = useState('');
             const searchTimer = useRef(null);
             const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -951,8 +1012,11 @@ HTML_TEMPLATE = r'''
             const dlPollRef = useRef(null);
 
             const notify = (type, message) => {
-                setNotification({ type, message });
-                setTimeout(() => setNotification(null), 4000);
+                const id = `${Date.now()}-${Math.random()}`;
+                setNotifications((prev) => [...prev, { id, type, message }]);
+                setTimeout(() => {
+                    setNotifications((prev) => prev.filter((item) => item.id !== id));
+                }, 4000);
             };
 
             const openBrowser = (mode, setter) => {
@@ -1086,6 +1150,26 @@ HTML_TEMPLATE = r'''
                 const res = await api.post('/api/scan', { folder: romFolder, scan_archives: scanArchives, recursive, blindmatch_system: blindmatchSystem });
                 if (res.error) notify('error', res.error);
                 else { notify('success', 'Scan started'); refreshStatus(); }
+            };
+
+
+            const handleDatDrop = (files) => {
+                const datFile = files.find((f) => f.name.toLowerCase().endsWith('.dat'));
+                if (!datFile) return notify('warning', 'Drop a .dat file');
+                setDatPath(datFile.path || datFile.name);
+                notify('info', `Selected DAT: ${datFile.name}`);
+            };
+
+            const handleRomDrop = (files) => {
+                const first = files[0];
+                if (!first) return;
+                const folderPath = first.path ? first.path.replace(/[\\/][^\\/]+$/, '') : '';
+                if (folderPath) {
+                    setRomFolder(folderPath);
+                    notify('info', `Selected folder from drop: ${folderPath}`);
+                } else {
+                    notify('warning', 'Browser security blocks folder paths here. Use Browse when needed.');
+                }
             };
 
             /* ── Force identify ──── */
@@ -1287,7 +1371,7 @@ HTML_TEMPLATE = r'''
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-                    <Notification notification={notification} onClose={() => setNotification(null)} />
+                    <NotificationStack notifications={notifications} onClose={(id) => setNotifications((prev) => prev.filter((item) => item.id !== id))} />
                     {browserMode && <FileBrowser mode={browserMode} onSelect={browserCallback} onClose={() => setBrowserMode(null)} />}
 
                     {/* ── Preview Modal ── */}
@@ -1451,7 +1535,7 @@ HTML_TEMPLATE = r'''
                                             <span className="text-xs text-slate-500 self-center">{myrientFiles.length} files</span>
                                         </div>
                                         <div className="flex-1 overflow-auto bg-slate-900/50 rounded" id="myrient-files">
-                                            {myrientLoading ? <div className="p-4 text-center text-slate-500"><span className="loader"></span> Loading...</div> :
+                                            {myrientLoading ? <SkeletonRows rows={8} /> :
                                                 myrientFiles.length === 0 ? <div className="p-4 text-center text-slate-500">Select a system to browse files</div> :
                                                 myrientFiles.map((f, i) => (
                                                     <div key={i} className="px-3 py-1.5 text-xs cursor-pointer border-b border-slate-800 hover:bg-slate-700/50 flex justify-between items-center myrient-file-row"
@@ -1576,6 +1660,7 @@ HTML_TEMPLATE = r'''
                                     <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
                                     <button onClick={loadDat} className="ml-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium transition text-sm">Add</button>
                                 </div>
+                                <DropZone label="Drop DAT files here" hint="Arraste arquivos .dat para preencher o campo automaticamente" onFiles={handleDatDrop} />
                                 {(status.dats_loaded || []).length > 0 && (
                                     <div className="space-y-2 max-h-32 overflow-auto">
                                         {status.dats_loaded.map((d, i) => (
@@ -1603,10 +1688,11 @@ HTML_TEMPLATE = r'''
                                     <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 bg-emerald-600 hover:bg-emerald-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
                                     <button onClick={startScan} disabled={status.scanning}
                                         className="ml-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg font-medium transition flex items-center gap-2 text-sm">
-                                        {status.scanning && <span className="loader"></span>}
+                                        {status.scanning && <span className="h-4 w-8 rounded skeleton"></span>}
                                         Scan
                                     </button>
                                 </div>
+                                <DropZone label="Drop ROM folder/files here" hint="Arraste uma ROM para inferir a pasta de origem" onFiles={handleRomDrop} />
                                 <div className="flex gap-4 mb-3 items-center">
                                     <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
                                         <input type="checkbox" checked={scanArchives} onChange={e => setScanArchives(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
@@ -1673,6 +1759,12 @@ HTML_TEMPLATE = r'''
                                     <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                                         className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
                                 </div>
+                                {activeTab === 'identified' && (
+                                    <div className="flex rounded-lg border border-slate-600 overflow-hidden">
+                                        <button onClick={() => setIdentifiedView('list')} className={`px-3 py-2 text-sm ${identifiedView === 'list' ? 'bg-cyan-700 text-white' : 'bg-slate-800 text-slate-300'}`}>List</button>
+                                        <button onClick={() => setIdentifiedView('grid')} className={`px-3 py-2 text-sm ${identifiedView === 'grid' ? 'bg-cyan-700 text-white' : 'bg-slate-800 text-slate-300'}`}>Grid</button>
+                                    </div>
+                                )}
                                 {activeTab === 'unidentified' && (
                                     <button onClick={forceIdentify} disabled={selected.size === 0}
                                         className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition text-sm">
@@ -1693,35 +1785,51 @@ HTML_TEMPLATE = r'''
 
                             {/* Table content */}
                             <div className="max-h-[450px] overflow-auto">
-                                {activeTab === 'identified' && (
+                                {activeTab === 'identified' && identifiedView === 'list' && (
                                     <table className="w-full text-sm">
                                         <thead className="bg-slate-800/80 sticky top-0">
                                             <tr className="text-left text-slate-400">
-                                                <th className="p-3">Original File</th>
-                                                <th className="p-3">ROM Name</th>
-                                                <th className="p-3">Game</th>
-                                                <th className="p-3">System</th>
-                                                <th className="p-3">Region</th>
-                                                <th className="p-3">Size</th>
-                                                <th className="p-3">CRC32</th>
-                                                <th className="p-3">Status</th>
+                                                <th className="p-4">Original File</th>
+                                                <th className="p-4">ROM Name</th>
+                                                <th className="p-4">Game</th>
+                                                <th className="p-4">System</th>
+                                                <th className="p-4">Region</th>
+                                                <th className="p-4">Size</th>
+                                                <th className="p-4">CRC32</th>
+                                                <th className="p-4">Status</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700/50">
                                             {filteredIdentified.map(rom => (
                                                 <tr key={rom.id} className="hover:bg-slate-800/30">
-                                                    <td className="p-3 text-slate-300 max-w-[180px] truncate">{rom.original_file}</td>
-                                                    <td className="p-3 text-cyan-300">{rom.rom_name}</td>
-                                                    <td className="p-3">{rom.game_name}</td>
-                                                    <td className="p-3 text-slate-400">{rom.system}</td>
-                                                    <td className="p-3"><RegionBadge region={rom.region} /></td>
-                                                    <td className="p-3 text-slate-400">{rom.size_formatted}</td>
-                                                    <td className="p-3 font-mono text-xs text-slate-500">{rom.crc32}</td>
-                                                    <td className="p-3 text-slate-400">{rom.status}</td>
+                                                    <td className="p-4 text-slate-300 max-w-[180px] truncate">{rom.original_file}</td>
+                                                    <td className="p-4 text-cyan-300">{rom.rom_name}</td>
+                                                    <td className="p-4">{rom.game_name}</td>
+                                                    <td className="p-4 text-slate-400">{rom.system}</td>
+                                                    <td className="p-4"><RegionBadge region={rom.region} /></td>
+                                                    <td className="p-4 text-slate-400">{rom.size_formatted}</td>
+                                                    <td className="p-4 font-mono text-xs text-slate-500">{rom.crc32}</td>
+                                                    <td className="p-4 text-slate-400">{rom.status}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
+                                )}
+
+                                {activeTab === 'identified' && identifiedView === 'grid' && (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
+                                        {filteredIdentified.map(rom => (
+                                            <div key={rom.id} className="rounded-xl border border-slate-700 bg-slate-900/40 p-3 space-y-2 hover:border-cyan-500 transition">
+                                                <div className="h-32 rounded-lg bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center text-3xl text-slate-500">🎮</div>
+                                                <div className="font-semibold text-sm truncate">{rom.game_name || rom.rom_name}</div>
+                                                <div className="text-xs text-slate-400 truncate">{rom.system}</div>
+                                                <div className="flex items-center justify-between text-xs">
+                                                    <RegionBadge region={rom.region} />
+                                                    <span className="text-slate-500">{rom.size_formatted}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 )}
 
                                 {activeTab === 'unidentified' && (
@@ -1807,8 +1915,10 @@ HTML_TEMPLATE = r'''
                                   (activeTab === 'missing' && filteredMissing.length === 0)) && (
                                     <div className="p-12 text-center text-slate-500">
                                         <div className="text-4xl mb-2">&#128196;</div>
-                                        <p>No files to display</p>
-                                        <p className="text-sm">{activeTab === 'missing' ? 'Load DATs and scan ROMs to see missing items' : 'Load a DAT and scan your ROMs'}</p>
+                                        <div className="text-6xl opacity-40">🎮</div>
+                                        <p className="text-lg font-semibold">Nenhuma ROM encontrada</p>
+                                        <p className="text-sm">Que tal começarmos importando seu primeiro arquivo DAT?</p>
+                                        <button onClick={openDatLibrary} className="mt-3 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-white">Importar DAT</button>
                                     </div>
                                 )}
                             </div>
