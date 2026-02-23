@@ -29,8 +29,15 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
-from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor, start_monitored_thread
+from .monitor import (
+    attach_tk_click_monitor,
+    install_tk_exception_bridge,
+    monitor_action,
+    setup_runtime_monitor,
+    start_monitored_thread,
+)
 from . import i18n as _i18n
+from . import __version__
 from .settings import load_settings, apply_runtime_settings
 from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
 
@@ -99,6 +106,7 @@ class ROMManagerGUI:
 
         self.root = tk.Tk()
         install_tk_exception_bridge(self.root)
+        attach_tk_click_monitor(self.root)
         monitor_action("tkinter gui opened")
         self.root.title(f"{_tr('title_main')} ver {__version__}")
         self.root.geometry("1300x850")
