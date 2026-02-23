@@ -53,16 +53,10 @@ def open_flet_mode(root):
 
 
 def open_flutter_frontend_mode(root):
-    """Start Flask backend and launch the new Flutter frontend."""
+    """Start only the Flutter frontend (API is expected to be already running)."""
     monitor_action("launcher click: flutter_frontend")
     root.destroy()
     print(_tr("launcher_flutter_start"))
-
-    backend_thread = threading.Thread(
-        target=lambda: run_server(shutdown_on_idle=False),
-        daemon=True,
-    )
-    backend_thread.start()
 
     flutter_project_root = Path(__file__).resolve().parent.parent
     flutter_command = [
@@ -78,14 +72,11 @@ def open_flutter_frontend_mode(root):
     except FileNotFoundError:
         print(_tr("error_flutter_unavailable"))
         print(_tr("install_flutter"))
-        print(_tr("launcher_web_fallback"))
-        webbrowser.open("http://127.0.0.1:5000")
-        backend_thread.join()
+        sys.exit(1)
     except subprocess.CalledProcessError as exc:
         print(_tr("error_flutter_failed"))
         print(f"Details: {exc}")
         sys.exit(exc.returncode or 1)
-
 
 
 def open_pyside6_mode(root):
@@ -101,6 +92,7 @@ def open_pyside6_mode(root):
         print(f"Details: {exc}")
         sys.exit(1)
 
+
 def open_web_mode(root):
     """Start web server and open browser"""
     monitor_action("launcher click: webapp")
@@ -109,6 +101,7 @@ def open_web_mode(root):
     # Open browser after a slight delay to ensure server is running
     threading.Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5000")).start()
     run_server(shutdown_on_idle=True)
+
 
 def open_desktop_mode(root):
     """Start desktop GUI"""
@@ -129,15 +122,61 @@ def open_cli_mode(root):
     from .cli import run_cli
     run_cli(['--help'])
 
+
 def _change_language_launcher(root, lang):
     _set_language(lang)
     root.destroy()
     run_launcher()
 
 
+def _build_option_card(parent, title, subtitle, command, accent_color):
+    card = tk.Frame(
+        parent,
+        bg="#313244",
+        highlightthickness=1,
+        highlightbackground=accent_color,
+        bd=0,
+        height=82,
+    )
+    card.pack(fill=tk.X, pady=5)
+    card.pack_propagate(False)
+
+    title_btn = tk.Button(
+        card,
+        text=title,
+        command=command,
+        anchor="w",
+        bg="#313244",
+        fg="#cdd6f4",
+        activebackground="#45475a",
+        activeforeground="#ffffff",
+        relief=tk.FLAT,
+        bd=0,
+        cursor="hand2",
+        font=("Segoe UI", 11, "bold"),
+        padx=14,
+        pady=4,
+    )
+    title_btn.pack(fill=tk.X, pady=(8, 0))
+
+    subtitle_lbl = tk.Label(
+        card,
+        text=subtitle,
+        anchor="w",
+        bg="#313244",
+        fg="#a6adc8",
+        font=("Segoe UI", 9),
+        padx=16,
+    )
+    subtitle_lbl.pack(fill=tk.X, pady=(2, 8))
+
+    card.bind("<Button-1>", lambda _e: command())
+    subtitle_lbl.bind("<Button-1>", lambda _e: command())
+
+
 def run_launcher():
-    apply_runtime_settings(load_settings())
     """Run the selection launcher"""
+    apply_runtime_settings(load_settings())
     setup_runtime_monitor()
     if not GUI_AVAILABLE:
         print(_tr("launcher_tk_unavailable"))
@@ -149,30 +188,38 @@ def run_launcher():
     attach_tk_click_monitor(root)
     root.title(_tr("title_launcher"))
     monitor_action("launcher opened")
-    root.geometry("560x520")
+
+    width, height = 640, 650
+    root.geometry(f"{width}x{height}")
     root.resizable(False, False)
-    
-    # Center window
+
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    x = (screen_width - 560) // 2
-    y = (screen_height - 520) // 2
-    root.geometry(f"560x520+{x}+{y}")
-    
-    lang_var = tk.StringVar(value=_safe_get_language())
+    x = (screen_width - width) // 2
+    y = (screen_height - height) // 2
+    root.geometry(f"{width}x{height}+{x}+{y}")
 
+    lang_var = tk.StringVar(value=_safe_get_language())
     menubar = tk.Menu(root)
     lang_menu = tk.Menu(menubar, tearoff=0)
-    lang_menu.add_radiobutton(label=_tr("language_english"), variable=lang_var, value=LANG_EN,
-                              command=lambda: _change_language_launcher(root, LANG_EN))
-    lang_menu.add_radiobutton(label=_tr("language_ptbr"), variable=lang_var, value=LANG_PT_BR,
-                              command=lambda: _change_language_launcher(root, LANG_PT_BR))
+    lang_menu.add_radiobutton(
+        label=_tr("language_english"),
+        variable=lang_var,
+        value=LANG_EN,
+        command=lambda: _change_language_launcher(root, LANG_EN),
+    )
+    lang_menu.add_radiobutton(
+        label=_tr("language_ptbr"),
+        variable=lang_var,
+        value=LANG_PT_BR,
+        command=lambda: _change_language_launcher(root, LANG_PT_BR),
+    )
     menubar.add_cascade(label=_tr("menu_language"), menu=lang_menu)
     root.config(menu=menubar)
 
     root.configure(bg="#11111b")
 
-    frame = tk.Frame(root, bg="#1e1e2e", bd=0, highlightthickness=1, highlightbackground="#313244")
+    frame = tk.Frame(root, bg="#1e1e2e", bd=0, highlightthickness=1, highlightbackground="#45475a")
     frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
 
     tk.Label(
@@ -180,44 +227,39 @@ def run_launcher():
         text=_tr("title_main"),
         bg="#1e1e2e",
         fg="#cdd6f4",
-        font=("Segoe UI", 26, "bold"),
-    ).pack(pady=(24, 6))
+        font=("Segoe UI", 28, "bold"),
+    ).pack(pady=(20, 4))
+
     tk.Label(
         frame,
         text=_tr("choose_interface"),
         bg="#1e1e2e",
         fg="#a6adc8",
         font=("Segoe UI", 11),
-    ).pack(pady=(0, 16))
+    ).pack(pady=(0, 4))
+
+    tk.Label(
+        frame,
+        text=_tr("launcher_brief"),
+        bg="#1e1e2e",
+        fg="#bac2de",
+        font=("Segoe UI", 9),
+    ).pack(pady=(0, 12))
 
     btn_frame = tk.Frame(frame, bg="#1e1e2e")
-    btn_frame.pack(fill=tk.BOTH, expand=True, padx=28, pady=(4, 12))
+    btn_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(4, 10))
 
-    button_options = [
-        (_tr("launcher_flutter"), lambda: open_flutter_frontend_mode(root)),
-        (_tr("launcher_flet"), lambda: open_flet_mode(root)),
-        ("🧩 PySide6 Desktop", lambda: open_pyside6_mode(root)),
-        (_tr("launcher_tk"), lambda: open_desktop_mode(root)),
-        (_tr("launcher_web"), lambda: open_web_mode(root)),
-        (_tr("launcher_cli"), lambda: open_cli_mode(root)),
+    options = [
+        (_tr("launcher_flutter"), _tr("launcher_flutter_desc"), lambda: open_flutter_frontend_mode(root), "#b4befe"),
+        (_tr("launcher_flet"), _tr("launcher_flet_desc"), lambda: open_flet_mode(root), "#cba6f7"),
+        ("🧩 PySide6 Desktop", _tr("launcher_pyside_desc"), lambda: open_pyside6_mode(root), "#89b4fa"),
+        (_tr("launcher_tk"), _tr("launcher_tk_desc"), lambda: open_desktop_mode(root), "#a6e3a1"),
+        (_tr("launcher_web"), _tr("launcher_web_desc"), lambda: open_web_mode(root), "#fab387"),
+        (_tr("launcher_cli"), _tr("launcher_cli_desc"), lambda: open_cli_mode(root), "#f9e2af"),
     ]
 
-    for text, command in button_options:
-        tk.Button(
-            btn_frame,
-            text=text,
-            command=command,
-            bg="#313244",
-            fg="#cdd6f4",
-            activebackground="#45475a",
-            activeforeground="#ffffff",
-            relief=tk.FLAT,
-            bd=0,
-            cursor="hand2",
-            font=("Segoe UI", 11, "bold"),
-            height=2,
-            padx=16,
-        ).pack(fill=tk.X, pady=6)
+    for title, subtitle, command, accent in options:
+        _build_option_card(btn_frame, title, subtitle, command, accent)
 
     tk.Label(
         frame,
@@ -225,6 +267,6 @@ def run_launcher():
         bg="#1e1e2e",
         fg="#6c7086",
         font=("Segoe UI", 9),
-    ).pack(side=tk.BOTTOM, pady=(8, 16))
-    
+    ).pack(side=tk.BOTTOM, pady=(4, 14))
+
     root.mainloop()
