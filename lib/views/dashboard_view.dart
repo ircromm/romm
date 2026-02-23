@@ -107,7 +107,7 @@ class _StatCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: MochaColors.surface0.withOpacity(0.6),
+            color: MochaColors.surface0,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: MochaColors.surface1.withOpacity(0.8)),
             boxShadow: [

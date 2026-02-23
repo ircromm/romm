@@ -38,7 +38,7 @@ class R0mmApp extends StatelessWidget {
 enum AppView {
   dashboard('Dashboard', LucideIcons.layoutDashboard),
   library('Library', LucideIcons.library),
-  importScan('Import & Scan', LucideIcons.scanSearch),
+  importScan('Import & Scan', LucideIcons.folderSearch),
   downloads('Downloads', LucideIcons.download),
   toolsLogs('Tools & Logs', LucideIcons.wrench);
 

@@ -70,7 +70,7 @@ def open_flutter_frontend_mode(root):
         flutter_path,
         "run",
         "-d",
-        "chrome",
+        "windows",
         "--dart-define",
         "R0MM_API_BASE=http://127.0.0.1:5000/api",
     ]
