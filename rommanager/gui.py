@@ -37,6 +37,7 @@ from .monitor import (
     start_monitored_thread,
 )
 from . import i18n as _i18n
+from . import __version__
 from .settings import load_settings, apply_runtime_settings
 from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
 
