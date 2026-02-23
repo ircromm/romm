@@ -28,6 +28,7 @@ from .dat_library import DATLibrary
 from .dat_sources import DATSourceManager
 from .utils import format_size
 from .blindmatch import build_blindmatch_rom
+from .auto_downloader import AutoDownloadTaskRegistry
 from .session_state import build_snapshot, save_snapshot, load_snapshot, restore_into_matcher, restore_scanned
 from . import __version__
 from .shared_config import (
@@ -58,6 +59,7 @@ state = {
     'blindmatch_mode': False,
     'blindmatch_system': '',
     'settings': load_settings(),
+    'auto_downloads': AutoDownloadTaskRegistry(),
 }
 
 
@@ -439,6 +441,40 @@ def get_missing():
         'completeness': completeness,
         'completeness_by_dat': completeness_by_dat,
     })
+
+
+@app.route('/api/auto-download/start', methods=['POST'])
+def auto_download_start():
+    data = request.get_json() or {}
+    rom_name = data.get('rom_name', '')
+    if not rom_name:
+        return jsonify({'error': 'rom_name is required'}), 400
+
+    missing_roms = state['multi_matcher'].get_missing(state['identified'])
+    rom = next((r for r in missing_roms if r.name == rom_name), None)
+    if rom is None:
+        return jsonify({'error': 'ROM not found in missing list'}), 404
+
+    task_id = state['auto_downloads'].start(rom)
+    return jsonify({'task_id': task_id})
+
+
+@app.route('/api/auto-download/status/<task_id>')
+def auto_download_status(task_id: str):
+    task = state['auto_downloads'].get(task_id)
+    if task is None:
+        return jsonify({'error': 'task not found'}), 404
+
+    payload = {
+        'task_id': task.task_id,
+        'status': task.status,
+        'progress': task.progress,
+        'message': task.message,
+        'destination': task.destination,
+        'error': task.error,
+        'rom_name': task.rom_name,
+    }
+    return jsonify(payload)
 
 
 # ── Force Identify ─────────────────────────────────────────────
@@ -1136,6 +1172,7 @@ HTML_TEMPLATE = r'''
             const [dlLog, setDlLog] = useState([]);
             const [dlDelay, setDlDelay] = useState(5);
             const dlPollRef = useRef(null);
+            const [autoDownloadTasks, setAutoDownloadTasks] = useState({});
 
             const toast = useToast();
             const notify = (type, message) => {
@@ -1468,6 +1505,41 @@ HTML_TEMPLATE = r'''
             const filteredMissing = (missing.missing || []).filter(r =>
                 !q || r.game_name.toLowerCase().includes(q) || r.rom_name.toLowerCase().includes(q) || r.system.toLowerCase().includes(q)
             );
+
+            const startAutoDownload = async (rom) => {
+                const start = await api.post('/api/auto-download/start', { rom_name: rom.rom_name });
+                if (start.error || !start.task_id) {
+                    notify('error', start.error || 'Could not start auto-download');
+                    return;
+                }
+                setAutoDownloadTasks(prev => ({ ...prev, [rom.rom_name]: { task_id: start.task_id, status: 'queued', progress: 0, message: 'Queued' } }));
+            };
+
+            useEffect(() => {
+                const pendingEntries = Object.entries(autoDownloadTasks).filter(([, t]) => t.status === 'queued' || t.status === 'running');
+                if (!pendingEntries.length) return;
+
+                const iv = setInterval(async () => {
+                    const updates = {};
+                    for (const [, t] of pendingEntries) {
+                        const st = await api.get(`/api/auto-download/status/${t.task_id}`);
+                        if (st && !st.error) {
+                            updates[st.rom_name] = st;
+                            if (st.status === 'done') {
+                                notify('success', `${st.rom_name} installed`);
+                                refreshMissing();
+                            } else if (st.status === 'failed') {
+                                notify('error', `${st.rom_name}: download failed`);
+                            }
+                        }
+                    }
+                    if (Object.keys(updates).length) {
+                        setAutoDownloadTasks(prev => ({ ...prev, ...updates }));
+                    }
+                }, 1200);
+
+                return () => clearInterval(iv);
+            }, [autoDownloadTasks]);
 
             const progress = status.scan_total > 0 ? (status.scan_progress / status.scan_total * 100) : 0;
             const comp = missing.completeness || {};
@@ -1922,6 +1994,25 @@ HTML_TEMPLATE = r'''
                                                     <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.system}</td>
                                                     <td className="p-3"><RegionBadge region={rom.region} /></td>
                                                     <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.size_formatted}</td>
+                                                        <td className="p-3">{
+                                                            (() => {
+                                                                const t = autoDownloadTasks[rom.rom_name];
+                                                                if (!t || t.status === 'failed') {
+                                                                    return <button onClick={() => startAutoDownload(rom)} className="px-3 py-1 rounded text-xs font-medium" style={{backgroundColor:'var(--secondary)', color:'var(--bg-deep)'}}>Download</button>;
+                                                                }
+                                                                if (t.status === 'done') {
+                                                                    return <span style={{color:'var(--success)', fontSize:'12px'}}>Installed</span>;
+                                                                }
+                                                                return (
+                                                                    <div style={{minWidth:'140px'}}>
+                                                                        <div style={{fontSize:'11px', color:'var(--subtext0)'}}>{t.progress || 0}%</div>
+                                                                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{backgroundColor:'var(--surface1)'}}>
+                                                                            <div className="h-full" style={{backgroundColor:'var(--secondary)', width:`${t.progress || 0}%`}}></div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })()
+                                                        }</td>
                                                     <td className="p-3 font-mono text-xs" style={{color:'var(--overlay1)'}}>{rom.crc32}</td>
                                                     <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.status}</td>
                                                 </tr>
@@ -1992,6 +2083,7 @@ HTML_TEMPLATE = r'''
                                                     <th className="p-3">System</th>
                                                     <th className="p-3">Region</th>
                                                     <th className="p-3">Size</th>
+                                                    <th className="p-3">Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -2002,6 +2094,25 @@ HTML_TEMPLATE = r'''
                                                         <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.system}</td>
                                                         <td className="p-3"><RegionBadge region={rom.region} /></td>
                                                         <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.size_formatted}</td>
+                                                        <td className="p-3">{
+                                                            (() => {
+                                                                const t = autoDownloadTasks[rom.rom_name];
+                                                                if (!t || t.status === 'failed') {
+                                                                    return <button onClick={() => startAutoDownload(rom)} className="px-3 py-1 rounded text-xs font-medium" style={{backgroundColor:'var(--secondary)', color:'var(--bg-deep)'}}>Download</button>;
+                                                                }
+                                                                if (t.status === 'done') {
+                                                                    return <span style={{color:'var(--success)', fontSize:'12px'}}>Installed</span>;
+                                                                }
+                                                                return (
+                                                                    <div style={{minWidth:'140px'}}>
+                                                                        <div style={{fontSize:'11px', color:'var(--subtext0)'}}>{t.progress || 0}%</div>
+                                                                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{backgroundColor:'var(--surface1)'}}>
+                                                                            <div className="h-full" style={{backgroundColor:'var(--secondary)', width:`${t.progress || 0}%`}}></div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })()
+                                                        }</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

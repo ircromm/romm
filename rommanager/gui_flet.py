@@ -4,6 +4,7 @@ Catppuccin Mocha color scheme with Progressive Disclosure design.
 Compatible with Flet 0.80+.
 """
 
+import asyncio
 import os
 import shutil
 import sys
@@ -42,6 +43,7 @@ from .shared_config import (
 )
 from .blindmatch import build_blindmatch_rom
 from .monitor import setup_runtime_monitor, monitor_action
+from .auto_downloader import AutoScraperDownloader
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
 LANG_PT_BR = getattr(_i18n, "LANG_PT_BR", "pt-BR")
 
@@ -1224,6 +1226,8 @@ class MissingReportsView(ft.Column):
         self._pg.services.append(self.export_picker)
         self.report_list = ft.ListView(spacing=4, expand=True, padding=ft.Padding.all(8))
         self._current_report = None
+        self._auto_dl = AutoScraperDownloader()
+        self._dl_state: Dict[str, Dict[str, Any]] = {}
 
     def build_content(self):
         self.controls.clear()
@@ -1293,9 +1297,25 @@ class MissingReportsView(ft.Column):
 
             missing_items_col = ft.Column(controls=[], spacing=2, visible=False)
             for m in dat_report['missing'][:50]:
-                missing_items_col.controls.append(ft.Text(
-                    f"  {m['name']} [{m['region']}] ({m['size_formatted']})",
-                    size=10, color=MOCHA["subtext0"], selectable=True,
+                rom = ROMInfo(
+                    name=m['name'],
+                    game_name=m.get('game_name', ''),
+                    system_name=dat_report.get('system_name', ''),
+                    region=m.get('region', 'Unknown'),
+                    size=m.get('size', 0),
+                    crc32=m.get('crc32', ''),
+                    md5=m.get('md5', ''),
+                    sha1=m.get('sha1', ''),
+                )
+                missing_items_col.controls.append(ft.Row(
+                    controls=[
+                        ft.Text(
+                            f"  {m['name']} [{m['region']}] ({m['size_formatted']})",
+                            size=10, color=MOCHA["subtext0"], selectable=True, expand=True,
+                        ),
+                        self._download_cell(rom),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 ))
             if len(dat_report['missing']) > 50:
                 missing_items_col.controls.append(ft.Text(f"  ... and {len(dat_report['missing']) - 50} more", size=10, color=MOCHA["overlay0"]))
@@ -1315,6 +1335,46 @@ class MissingReportsView(ft.Column):
                 ft.TextButton(f"Show missing ({dat_report['missing_count']})", on_click=toggle_missing, style=ft.ButtonStyle(color=MOCHA["blue"])),
                 missing_items_col,
             ], spacing=6)))
+
+    def _download_cell(self, rom: ROMInfo):
+        key = rom.name
+        state = self._dl_state.get(key, {"status": "idle", "progress": 0})
+
+        if state.get("status") == "done":
+            return ft.Text("Installed", size=10, color=MOCHA["green"])
+
+        if state.get("status") in {"queued", "running"}:
+            return ft.Column(
+                controls=[
+                    ft.Text(f"{state.get('progress', 0)}%", size=9, color=MOCHA["subtext0"]),
+                    ft.ProgressBar(value=(state.get("progress", 0) / 100.0), color=MOCHA["blue"], bgcolor=MOCHA["surface1"], bar_height=4),
+                ],
+                spacing=2,
+                width=120,
+            )
+
+        return ft.TextButton(
+            "Baixar",
+            style=ft.ButtonStyle(color=MOCHA["blue"]),
+            on_click=lambda e, r=rom: self._pg.run_task(self._start_auto_download, r),
+        )
+
+    async def _start_auto_download(self, rom: ROMInfo):
+        self._dl_state[rom.name] = {"status": "queued", "progress": 0}
+        self.update()
+
+        def progress_cb(pct: int, _msg: str):
+            self._dl_state[rom.name] = {"status": "running", "progress": pct}
+            self.update()
+
+        try:
+            await asyncio.to_thread(self._auto_dl.download_rom, rom, progress_cb)
+            self._dl_state[rom.name] = {"status": "done", "progress": 100}
+            _show_snack(self._pg, f"{rom.name} instalado", MOCHA["green"])
+        except Exception:
+            self._dl_state[rom.name] = {"status": "failed", "progress": 0}
+            _show_snack(self._pg, f"Falha ao baixar {rom.name}", MOCHA["red"])
+        self.update()
 
     async def _export_report(self, fmt: str):
         if not self._current_report:
