@@ -9,18 +9,21 @@ import sys
 import threading
 import time
 import traceback
+from datetime import date
 from pathlib import Path
 from typing import Callable, Optional
 
 _INITIALIZED = False
 _HEARTBEAT_STOP = threading.Event()
 _FAULT_HANDLER_FILE = None
+_SESSION_LOG_DATE: Optional[date] = None
 
 
 def _default_log_path() -> Path:
     base = Path.home() / ".rommanager" / "logs"
     base.mkdir(parents=True, exist_ok=True)
-    return base / "runtime.log"
+    session_day = _SESSION_LOG_DATE or date.today()
+    return base / f"runtime-{session_day.isoformat()}.log"
 
 
 def setup_runtime_monitor(app_name: str = "rommanager", heartbeat_seconds: int = 15) -> logging.Logger:
@@ -33,6 +36,10 @@ def setup_runtime_monitor(app_name: str = "rommanager", heartbeat_seconds: int =
 
     logger.setLevel(logging.INFO)
     logger.propagate = False
+
+    global _SESSION_LOG_DATE
+    if _SESSION_LOG_DATE is None:
+        _SESSION_LOG_DATE = date.today()
 
     formatter = logging.Formatter(
         fmt="%(asctime)s | %(levelname)s | %(threadName)s | %(message)s",
@@ -144,3 +151,52 @@ def install_tk_exception_bridge(root, *, logger: Optional[logging.Logger] = None
         traceback.print_exception(exc, val, tb)
 
     root.report_callback_exception = _report_callback_exception
+
+
+def attach_tk_click_monitor(root, *, logger: Optional[logging.Logger] = None) -> None:
+    """Open a background monitor window and log every Tk click event."""
+    if getattr(root, "_romm_click_monitor_attached", False):
+        return
+
+    log = logger or logging.getLogger("rommanager")
+
+    try:
+        import tkinter as tk
+    except Exception:
+        log.warning("tk click monitor unavailable: tkinter import failed")
+        return
+
+    monitor_window = tk.Toplevel(root)
+    monitor_window.title(f"R0MM Event Monitor - {_SESSION_LOG_DATE or date.today():%Y-%m-%d}")
+    monitor_window.geometry("560x260+40+40")
+    monitor_window.configure(bg="#101018")
+    monitor_window.lower()
+
+    text = tk.Text(
+        monitor_window,
+        wrap="word",
+        bg="#101018",
+        fg="#cdd6f4",
+        insertbackground="#cdd6f4",
+        relief="flat",
+        font=("Consolas", 9),
+    )
+    text.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def _write_line(line: str) -> None:
+        text.insert("end", f"{line}\n")
+        text.see("end")
+
+    _write_line("[monitor] dedicated click monitor started")
+
+    def _on_click(event):
+        widget = event.widget
+        widget_desc = f"{widget.winfo_class()}:{widget.winfo_name()}"
+        action = f"click: widget={widget_desc} local=({event.x},{event.y}) screen=({event.x_root},{event.y_root})"
+        log.info(action)
+        _write_line(action)
+
+    root.bind_all("<Button>", _on_click, add="+")
+    root._romm_click_monitor_attached = True
+    root._romm_click_monitor_window = monitor_window
+    log.info("Tk click monitor window opened")
