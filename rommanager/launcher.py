@@ -4,6 +4,7 @@ import sys
 import webbrowser
 import threading
 import subprocess
+import shutil
 from pathlib import Path
 
 from .web import run_server
@@ -59,8 +60,14 @@ def open_flutter_frontend_mode(root):
     print(_tr("launcher_flutter_start"))
 
     flutter_project_root = Path(__file__).resolve().parent.parent
+    flutter_path = shutil.which("flutter") or shutil.which("flutter.bat")
+    if not flutter_path:
+        print(_tr("error_flutter_unavailable"))
+        print(_tr("install_flutter"))
+        sys.exit(1)
+
     flutter_command = [
-        "flutter",
+        flutter_path,
         "run",
         "-d",
         "chrome",
@@ -69,10 +76,6 @@ def open_flutter_frontend_mode(root):
     ]
     try:
         subprocess.run(flutter_command, check=True, cwd=str(flutter_project_root))
-    except FileNotFoundError:
-        print(_tr("error_flutter_unavailable"))
-        print(_tr("install_flutter"))
-        sys.exit(1)
     except subprocess.CalledProcessError as exc:
         print(_tr("error_flutter_failed"))
         print(f"Details: {exc}")
