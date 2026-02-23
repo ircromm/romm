@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from typing import Any
 
-from .models import Collection
+from .models import Collection, ROMInfo
 from .parser import DATParser
 from .scanner import FileScanner
 from .matcher import MultiROMMatcher
@@ -20,6 +20,7 @@ from .thumbnail_service import ThumbnailService
 from .blindmatch import build_blindmatch_rom
 from . import i18n as _i18n
 from . import __version__
+from .auto_downloader import AutoScraperDownloader
 
 
 LANG_EN = getattr(_i18n, "LANG_EN", "en")
@@ -51,7 +52,7 @@ MOCHA = {
 
 def run_pyside6_gui() -> int:
     try:
-        from PySide6.QtCore import Qt
+        from PySide6.QtCore import Qt, QThread, Signal
         from PySide6.QtGui import QAction, QPixmap, QStandardItem, QStandardItemModel
         from PySide6.QtWidgets import (
             QApplication,
@@ -80,6 +81,26 @@ def run_pyside6_gui() -> int:
         print(f"Details: {exc}")
         return 1
 
+    class AutoDownloadWorker(QThread):
+        progress = Signal(str, int, str)
+        finished = Signal(str, str)
+        failed = Signal(str, str)
+
+        def __init__(self, downloader: AutoScraperDownloader, rom: ROMInfo):
+            super().__init__()
+            self.downloader = downloader
+            self.rom = rom
+
+        def run(self):
+            try:
+                def cb(pct: int, msg: str):
+                    self.progress.emit(self.rom.name, pct, msg)
+
+                dest = self.downloader.download_rom(self.rom, progress_callback=cb)
+                self.finished.emit(self.rom.name, dest)
+            except Exception as exc:  # noqa: BLE001
+                self.failed.emit(self.rom.name, str(exc))
+
     class PySideROMManager(QMainWindow):
         def __init__(self):
             super().__init__()
@@ -94,6 +115,9 @@ def run_pyside6_gui() -> int:
             self.identified = []
             self.unidentified = []
             self._thumb_svc = ThumbnailService(THUMBNAILS_DIR)
+            self._auto_dl = AutoScraperDownloader()
+            self._download_threads = {}
+            self._download_status = {}
 
             self._apply_theme()
             self._setup_menu()
@@ -271,9 +295,10 @@ def run_pyside6_gui() -> int:
             results_layout.addWidget(self.unidentified_table, 1)
 
             self.missing_table = QTableView()
-            self.missing_model = QStandardItemModel(0, 5, self)
-            self.missing_model.setHorizontalHeaderLabels(["ROM Name", "Game", "System", "Region", "Size"])
+            self.missing_model = QStandardItemModel(0, 7, self)
+            self.missing_model.setHorizontalHeaderLabels(["ROM Name", "Game", "System", "Region", "Size", "Status", "Action"])
             self.missing_table.setModel(self.missing_model)
+            self.missing_table.clicked.connect(self._on_missing_row_clicked)
             results_layout.addWidget(QLabel("Missing"))
             results_layout.addWidget(self.missing_table, 1)
 
@@ -471,13 +496,55 @@ def run_pyside6_gui() -> int:
         def _refresh_missing_table(self):
             self.missing_model.setRowCount(0)
             for rom in self.matcher.get_missing(self.identified):
+                status = self._download_status.get(rom.name, {}).get("status", "Missing")
+                action_text = "Baixar" if status not in {"Installed", "Downloading"} else "-"
                 self.missing_model.appendRow([
                     QStandardItem(rom.name),
                     QStandardItem(rom.game_name),
                     QStandardItem(rom.system_name),
                     QStandardItem(rom.region),
                     QStandardItem(format_size(rom.size)),
+                    QStandardItem(status),
+                    QStandardItem(action_text),
                 ])
+
+        def _on_missing_row_clicked(self, index):
+            row = index.row()
+            col = index.column()
+            if col != 6:
+                return
+            rom_name = self.missing_model.item(row, 0).text()
+            if self.missing_model.item(row, 6).text() != "Baixar":
+                return
+            missing = self.matcher.get_missing(self.identified)
+            rom = next((r for r in missing if r.name == rom_name), None)
+            if not rom:
+                return
+            self._start_auto_download(rom)
+
+        def _start_auto_download(self, rom: ROMInfo):
+            self._download_status[rom.name] = {"status": "Downloading", "progress": 0}
+            self._refresh_missing_table()
+            worker = AutoDownloadWorker(self._auto_dl, rom)
+            worker.progress.connect(self._on_download_progress)
+            worker.finished.connect(self._on_download_finished)
+            worker.failed.connect(self._on_download_failed)
+            self._download_threads[rom.name] = worker
+            worker.start()
+
+        def _on_download_progress(self, rom_name: str, progress: int, _message: str):
+            self._download_status[rom_name] = {"status": f"Downloading {progress}%", "progress": progress}
+            self._refresh_missing_table()
+
+        def _on_download_finished(self, rom_name: str, _destination: str):
+            self._download_status[rom_name] = {"status": "Installed", "progress": 100}
+            self.statusBar().showMessage(f"{rom_name} instalado", 2500)
+            self._refresh_missing_table()
+
+        def _on_download_failed(self, rom_name: str, _error: str):
+            self._download_status[rom_name] = {"status": "Failed", "progress": 0}
+            self.statusBar().showMessage(f"Falha ao baixar {rom_name}", 3000)
+            self._refresh_missing_table()
 
         def _load_dat(self):
             filepath, _ = QFileDialog.getOpenFileName(self, "Load DAT", "", "DAT/XML (*.dat *.xml *.zip *.gz)")
