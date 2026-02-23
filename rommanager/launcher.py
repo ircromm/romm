@@ -7,7 +7,7 @@ import threading
 
 from .web import run_server
 from .gui import run_gui, GUI_AVAILABLE
-from .monitor import install_tk_exception_bridge, monitor_action, setup_runtime_monitor
+from .monitor import attach_tk_click_monitor, install_tk_exception_bridge, monitor_action, setup_runtime_monitor
 from . import i18n as _i18n
 from .settings import load_settings, apply_runtime_settings
 from . import __version__
@@ -110,6 +110,7 @@ def run_launcher():
 
     root = tk.Tk()
     install_tk_exception_bridge(root)
+    attach_tk_click_monitor(root)
     root.title(_tr("title_launcher"))
     monitor_action("launcher opened")
     root.geometry("460x390")
