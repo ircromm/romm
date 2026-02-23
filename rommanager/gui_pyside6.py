@@ -15,7 +15,8 @@ from .organizer import Organizer
 from .collection import CollectionManager
 from .reporter import MissingROMReporter
 from .utils import format_size
-from .shared_config import STRATEGIES
+from .shared_config import STRATEGIES, THEME, THUMBNAILS_DIR
+from .thumbnail_service import ThumbnailService
 from .blindmatch import build_blindmatch_rom
 from . import i18n as _i18n
 from . import __version__
@@ -32,23 +33,26 @@ def _tr(key: str, **kwargs: Any) -> str:
     return key
 
 
-DARK_QSS = """
-QWidget { background: #1e1e2e; color: #cdd6f4; }
-QMainWindow { background: #181825; }
-QLineEdit, QComboBox, QTableView, QListWidget, QPlainTextEdit {
-    background: #313244; border: 1px solid #45475a; border-radius: 8px; padding: 6px;
+MOCHA = {
+    "text":     THEME["text"],
+    "subtext0": THEME["subtext0"],
+    "subtext1": THEME["subtext1"],
+    "surface0": THEME["surface0"],
+    "surface1": THEME["surface1"],
+    "base":     THEME["bg"],
+    "crust":    THEME["bg_deep"],
+    "blue":     THEME["secondary"],
+    "green":    THEME["success"],
+    "mauve":    THEME["primary"],
+    "red":      THEME["error"],
+    "yellow":   THEME["warning"],
 }
-QPushButton { background: #45475a; border-radius: 8px; padding: 8px 12px; }
-QPushButton#Primary { background: #89b4fa; color: #11111b; font-weight: 700; }
-QTabWidget::pane { border: 1px solid #45475a; top: -1px; }
-QHeaderView::section { background: #313244; color: #cdd6f4; border: none; padding: 4px; }
-"""
 
 
 def run_pyside6_gui() -> int:
     try:
         from PySide6.QtCore import Qt
-        from PySide6.QtGui import QAction, QStandardItem, QStandardItemModel
+        from PySide6.QtGui import QAction, QPixmap, QStandardItem, QStandardItemModel
         from PySide6.QtWidgets import (
             QApplication,
             QComboBox,
@@ -62,6 +66,8 @@ def run_pyside6_gui() -> int:
             QMessageBox,
             QPlainTextEdit,
             QPushButton,
+            QSplitter,
+            QStackedWidget,
             QTabWidget,
             QTableView,
             QVBoxLayout,
@@ -87,10 +93,72 @@ def run_pyside6_gui() -> int:
             self.scanned_files = []
             self.identified = []
             self.unidentified = []
+            self._thumb_svc = ThumbnailService(THUMBNAILS_DIR)
 
+            self._apply_theme()
             self._setup_menu()
             self._build_ui()
             self._refresh_all()
+
+        def _apply_theme(self) -> None:
+            self.setStyleSheet(
+                f"""
+                QMainWindow, QWidget {{ background-color: {MOCHA['base']}; color: {MOCHA['text']}; font-family: 'Inter', 'Segoe UI', sans-serif; }}
+                QGroupBox {{ border: 1px solid {MOCHA['surface1']}; border-radius: 12px; margin-top: 8px; padding: 8px; }}
+                QPushButton {{ background-color: {MOCHA['surface1']}; color: {MOCHA['text']}; border-radius: 8px; padding: 8px 12px; }}
+                QPushButton:hover {{ background-color: {MOCHA['mauve']}; color: {MOCHA['crust']}; }}
+                QPushButton:disabled {{ color: {MOCHA['subtext0']}; }}
+                QTableWidget, QListWidget, QTextEdit, QComboBox {{
+                    background-color: {MOCHA['surface0']};
+                    border: 1px solid {MOCHA['surface1']};
+                    border-radius: 6px;
+                    selection-background-color: {MOCHA['blue']};
+                    selection-color: {MOCHA['crust']};
+                }}
+                QTabBar::tab {{ background: {MOCHA['surface0']}; padding: 8px 14px; margin-right: 3px; border-radius: 6px 6px 0 0; }}
+                QTabBar::tab:selected {{ background: {MOCHA['mauve']}; color: {MOCHA['crust']}; }}
+                QHeaderView::section {{ background-color: {MOCHA['base']}; color: {MOCHA['mauve']}; border: none; padding: 6px; font-weight: bold; }}
+                QScrollBar:vertical {{ background: {MOCHA['surface0']}; width: 8px; border-radius: 4px; }}
+                QScrollBar::handle:vertical {{ background: {MOCHA['surface1']}; border-radius: 4px; }}
+                """
+            )
+
+        def _create_empty_state(self, icon_text, heading, subtext, cta_label=None, on_cta=None):
+            """Create a centered empty state widget."""
+            widget = QWidget(self)
+            layout = QVBoxLayout(widget)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.setSpacing(12)
+
+            icon = QLabel(icon_text)
+            icon.setStyleSheet(f"font-size: 64px; color: {MOCHA['subtext0']};")
+            icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(icon)
+
+            title = QLabel(heading)
+            title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {MOCHA['text']};")
+            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(title)
+
+            sub = QLabel(subtext)
+            sub.setStyleSheet(f"font-size: 13px; color: {MOCHA['subtext0']};")
+            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(sub)
+
+            if cta_label and on_cta:
+                btn = QPushButton(cta_label)
+                btn.setStyleSheet(f"""
+                    background-color: {MOCHA['mauve']};
+                    color: {MOCHA['crust']};
+                    border-radius: 8px;
+                    padding: 10px 24px;
+                    font-weight: bold;
+                    font-size: 14px;
+                """)
+                btn.clicked.connect(on_cta)
+                layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            return widget
 
         def _setup_menu(self):
             file_menu = self.menuBar().addMenu(_tr("menu_file"))
@@ -129,9 +197,10 @@ def run_pyside6_gui() -> int:
             self.stats_label.setStyleSheet("font-size: 14px; font-weight: 600;")
             base.addWidget(self.stats_label)
 
-            tabs = QTabWidget()
-            base.addWidget(tabs, 1)
+            self.tabs = QTabWidget()
+            base.addWidget(self.tabs, 1)
 
+            # ── Tab 0: DATs & Scan ──────────────────────────────────
             scan_tab = QWidget()
             scan_layout = QVBoxLayout(scan_tab)
 
@@ -163,10 +232,26 @@ def run_pyside6_gui() -> int:
             top_row.addLayout(dat_controls, 1)
             scan_layout.addLayout(top_row)
 
-            tabs.addTab(scan_tab, "DATs e Scan")
+            self.tabs.addTab(scan_tab, "DATs e Scan")
 
-            results_tab = QWidget()
-            results_layout = QVBoxLayout(results_tab)
+            # ── Tab 1: Library (with empty state + detail panel) ────
+            self.library_stack = QStackedWidget()
+
+            # Empty state page
+            self.library_empty = self._create_empty_state(
+                "\U0001F3AE", "No ROMs Loaded",
+                "Load a DAT file and scan your ROM folder to get started",
+                "Go to Import", lambda: self.tabs.setCurrentIndex(2)
+            )
+            self.library_stack.addWidget(self.library_empty)
+
+            # Content page: splitter with tables on left, detail panel on right
+            library_content = QSplitter(Qt.Orientation.Horizontal)
+
+            # Left side: tables
+            tables_widget = QWidget()
+            results_layout = QVBoxLayout(tables_widget)
+            results_layout.setContentsMargins(0, 0, 0, 0)
 
             self.identified_table = QTableView()
             self.identified_model = QStandardItemModel(0, 8, self)
@@ -174,6 +259,7 @@ def run_pyside6_gui() -> int:
                 "Original File", "ROM Name", "Game", "System", "Region", "Size", "CRC32", "Status"
             ])
             self.identified_table.setModel(self.identified_model)
+            self.identified_table.clicked.connect(self._on_identified_row_clicked)
             results_layout.addWidget(QLabel("Identified"))
             results_layout.addWidget(self.identified_table, 1)
 
@@ -191,8 +277,57 @@ def run_pyside6_gui() -> int:
             results_layout.addWidget(QLabel("Missing"))
             results_layout.addWidget(self.missing_table, 1)
 
-            tabs.addTab(results_tab, "Resultados")
+            library_content.addWidget(tables_widget)
 
+            # Right side: detail panel with thumbnail
+            detail_panel = QWidget()
+            detail_layout = QVBoxLayout(detail_panel)
+            detail_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+            self.detail_art = QLabel()
+            self.detail_art.setFixedSize(200, 240)
+            self.detail_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.detail_art.setStyleSheet(
+                f"background-color: {MOCHA['surface0']}; border-radius: 8px;"
+            )
+            detail_layout.addWidget(self.detail_art, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            self.detail_game_label = QLabel("")
+            self.detail_game_label.setStyleSheet(
+                f"font-size: 16px; font-weight: bold; color: {MOCHA['text']};"
+            )
+            self.detail_game_label.setWordWrap(True)
+            self.detail_game_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            detail_layout.addWidget(self.detail_game_label)
+
+            self.detail_system_label = QLabel("")
+            self.detail_system_label.setStyleSheet(
+                f"font-size: 13px; color: {MOCHA['subtext0']};"
+            )
+            self.detail_system_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            detail_layout.addWidget(self.detail_system_label)
+
+            self.detail_info_label = QLabel("")
+            self.detail_info_label.setStyleSheet(
+                f"font-size: 12px; color: {MOCHA['subtext1']};"
+            )
+            self.detail_info_label.setWordWrap(True)
+            self.detail_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            detail_layout.addWidget(self.detail_info_label)
+
+            detail_layout.addStretch(1)
+            detail_panel.setMinimumWidth(230)
+
+            library_content.addWidget(detail_panel)
+            library_content.setStretchFactor(0, 3)
+            library_content.setStretchFactor(1, 1)
+
+            self.library_stack.addWidget(library_content)
+            self.library_stack.setCurrentIndex(0)  # Show empty by default
+
+            self.tabs.addTab(self.library_stack, "Resultados")
+
+            # ── Tab 2: Organize ─────────────────────────────────────
             organize_tab = QWidget()
             organize_layout = QVBoxLayout(organize_tab)
             form = QFormLayout()
@@ -236,7 +371,50 @@ def run_pyside6_gui() -> int:
             self.log_box = QPlainTextEdit()
             self.log_box.setReadOnly(True)
             organize_layout.addWidget(self.log_box, 1)
-            tabs.addTab(organize_tab, "Organizar")
+            self.tabs.addTab(organize_tab, "Organizar")
+
+        def _on_identified_row_clicked(self, index):
+            """Update the detail panel when a row in the identified table is clicked."""
+            row = index.row()
+            if row < 0 or row >= len(self.identified):
+                return
+            scanned = self.identified[row]
+            rom = scanned.matched_rom
+            if not rom:
+                return
+
+            game_name = rom.game_name or ""
+            system = rom.system_name or ""
+
+            # Update text labels
+            self.detail_game_label.setText(game_name)
+            self.detail_system_label.setText(system)
+            self.detail_info_label.setText(
+                f"Region: {rom.region}\n"
+                f"Size: {format_size(scanned.size)}\n"
+                f"CRC32: {scanned.crc32.upper()}"
+            )
+
+            # Update thumbnail
+            thumb_path = self._thumb_svc.get_thumbnail_path(system, game_name)
+            if thumb_path:
+                pixmap = QPixmap(thumb_path).scaled(
+                    200, 240,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self.detail_art.setPixmap(pixmap)
+                self.detail_art.setStyleSheet(
+                    f"background-color: {MOCHA['surface0']}; border-radius: 8px;"
+                )
+            else:
+                initial = game_name[0].upper() if game_name else "?"
+                self.detail_art.clear()
+                self.detail_art.setText(initial)
+                self.detail_art.setStyleSheet(
+                    f"background-color: {MOCHA['surface0']}; border-radius: 8px; "
+                    f"font-size: 48px; font-weight: bold; color: {MOCHA['subtext0']};"
+                )
 
         def _log(self, msg: str):
             stamp = datetime.now().strftime("%H:%M:%S")
@@ -254,6 +432,10 @@ def run_pyside6_gui() -> int:
                 f"Unidentified: {len(self.unidentified)} | "
                 f"Completeness: {completeness['percentage']:.1f}%"
             )
+
+            # Toggle library empty state vs content
+            has_data = len(self.identified) > 0 or len(self.unidentified) > 0
+            self.library_stack.setCurrentIndex(1 if has_data else 0)
 
         def _refresh_dat_list(self):
             self.dat_list.clear()
@@ -460,8 +642,6 @@ def run_pyside6_gui() -> int:
             self._log(f"Missing report exported: {filepath}")
 
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setStyleSheet(DARK_QSS)
-    app.setAttribute(Qt.AA_UseHighDpiPixmaps)
     win = PySideROMManager()
     win.show()
     return app.exec()

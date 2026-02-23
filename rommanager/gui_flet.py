@@ -36,6 +36,8 @@ from .shared_config import (
     IMPORTED_DATS_DIR,
     IMPORTED_COLLECTIONS_DIR,
     IMPORTED_ROMS_DIR,
+    THEME,
+    THUMBNAILS_DIR,
     ensure_app_directories,
 )
 from .blindmatch import build_blindmatch_rom
@@ -132,34 +134,34 @@ def _version_tuple(version_str: str) -> tuple:
     return tuple(parts)
 
 
-# ─── Catppuccin Mocha Palette ──────────────────────────────────────────────────
+# ─── Catppuccin Mocha Palette (sourced from shared THEME) ──────────────────────
 MOCHA = {
-    "rosewater": "#f5e0dc",
-    "flamingo":  "#f2cdcd",
-    "pink":      "#f5c2e7",
-    "mauve":     "#cba6f7",
-    "red":       "#f38ba8",
-    "maroon":    "#eba0ac",
-    "peach":     "#fab387",
-    "yellow":    "#f9e2af",
-    "green":     "#a6e3a1",
-    "teal":      "#94e2d5",
-    "sky":       "#89dceb",
-    "sapphire":  "#74c7ec",
-    "blue":      "#89b4fa",
-    "lavender":  "#b4befe",
-    "text":      "#cdd6f4",
-    "subtext1":  "#bac2de",
-    "subtext0":  "#a6adc8",
-    "overlay2":  "#9399b2",
-    "overlay1":  "#7f849c",
-    "overlay0":  "#6c7086",
-    "surface2":  "#585b70",
-    "surface1":  "#45475a",
-    "surface0":  "#313244",
-    "base":      "#1e1e2e",
-    "mantle":    "#181825",
-    "crust":     "#11111b",
+    "rosewater": THEME["rosewater"],
+    "flamingo":  THEME["flamingo"],
+    "pink":      THEME["pink"],
+    "mauve":     THEME["primary"],
+    "red":       THEME["error"],
+    "maroon":    THEME["maroon"],
+    "peach":     THEME["peach"],
+    "yellow":    THEME["warning"],
+    "green":     THEME["success"],
+    "teal":      THEME["info"],
+    "sky":       THEME["sky"],
+    "sapphire":  THEME["sapphire"],
+    "blue":      THEME["secondary"],
+    "lavender":  THEME["lavender"],
+    "text":      THEME["text"],
+    "subtext1":  THEME["subtext1"],
+    "subtext0":  THEME["subtext0"],
+    "overlay2":  THEME["overlay2"],
+    "overlay1":  THEME["overlay1"],
+    "overlay0":  THEME["overlay0"],
+    "surface2":  THEME["surface2"],
+    "surface1":  THEME["surface1"],
+    "surface0":  THEME["surface0"],
+    "base":      THEME["bg"],
+    "mantle":    THEME["bg_dim"],
+    "crust":     THEME["bg_deep"],
 }
 
 REGION_BADGE_COLORS = {
@@ -172,6 +174,10 @@ REGION_BADGE_COLORS = {
     "China":  MOCHA["flamingo"],
 }
 DEFAULT_BADGE_COLOR = MOCHA["overlay1"]
+
+from rommanager.thumbnail_service import ThumbnailService
+
+_thumbnail_svc = ThumbnailService(THUMBNAILS_DIR)
 
 SPACE_8 = 8
 SPACE_16 = 16
@@ -341,21 +347,33 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
     system = rom.system_name if rom else ""
     first_letter = game_name[0].upper() if game_name else "?"
 
-    return ft.Container(
+    # Try to get cached thumbnail
+    thumb_path = _thumbnail_svc.get_thumbnail_path(system, game_name) if system else None
+
+    if thumb_path:
+        art_widget = ft.Image(src=thumb_path, fit=ft.ImageFit.COVER, expand=True)
+    else:
+        art_widget = ft.Container(
+            content=ft.Text(
+                first_letter, size=36,
+                weight=ft.FontWeight.BOLD,
+                color=MOCHA["overlay0"],
+            ),
+            bgcolor=MOCHA["surface0"],
+            alignment=ft.Alignment(0, 0),
+            expand=True,
+        )
+
+    card = ft.Container(
         content=ft.Stack(
             controls=[
                 ft.Container(
                     content=ft.Column(
                         controls=[
                             ft.Container(
-                                content=ft.Text(
-                                    first_letter, size=36,
-                                    weight=ft.FontWeight.BOLD,
-                                    color=MOCHA["overlay0"],
-                                ),
-                                bgcolor=MOCHA["surface0"],
+                                content=art_widget,
                                 border_radius=ft.border_radius.only(top_left=8, top_right=8),
-                                alignment=ft.Alignment(0, 0),
+                                clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                                 expand=True,
                             ),
                             ft.Container(
@@ -373,7 +391,7 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
                         ],
                         spacing=0,
                     ),
-                    border_radius=RADIUS_SM,
+                    border_radius=8,
                     border=ft.Border.all(1, MOCHA["surface1"]),
                     clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                 ),
@@ -382,8 +400,22 @@ def game_card(scanned: ScannedFile, on_click) -> ft.Container:
         ),
         on_click=lambda e: on_click(scanned),
         animate=ft.Animation(200, ft.AnimationCurve.EASE_IN_OUT),
+        animate_scale=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
+        scale=ft.Scale(1.0),
+        on_hover=lambda e: _card_hover(e),
         ink=True,
     )
+    return card
+
+
+def _card_hover(e):
+    """Micro-interaction: scale card on hover."""
+    container = e.control
+    if e.data == "true":
+        container.scale = ft.Scale(1.02)
+    else:
+        container.scale = ft.Scale(1.0)
+    container.update()
 
 
 # ─── Detail Panel ───────────────────────────────────────────────────────────────
@@ -404,8 +436,8 @@ class DetailPanel(ft.Container):
 
         self.width = 400
         self.min_width = 384
-        self.bgcolor = MOCHA["mantle"]
-        self.border = ft.Border.only(left=ft.BorderSide(1, MOCHA["surface1"]))
+        self.bgcolor = ft.Colors.with_opacity(0.88, MOCHA["mantle"])
+        self.border = ft.Border.only(left=ft.BorderSide(2, MOCHA["mauve"]))
         self.padding = ft.Padding.all(SPACE_24)
         self.visible = False
         self.animate_opacity = ft.Animation(250, ft.AnimationCurve.EASE_OUT)
@@ -417,6 +449,18 @@ class DetailPanel(ft.Container):
                     controls=[ft.Column(controls=[self.title_text, self.system_text], spacing=4, expand=True), self.close_btn],
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     vertical_alignment=ft.CrossAxisAlignment.START,
+                ),
+                ft.Container(
+                    content=ft.Button(
+                        "Play",
+                        icon=ft.Icons.PLAY_ARROW_ROUNDED,
+                        bgcolor=MOCHA["mauve"],
+                        color=MOCHA["crust"],
+                        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+                        disabled=True,
+                        tooltip="Emulator integration coming soon",
+                    ),
+                    padding=ft.Padding.only(bottom=8),
                 ),
                 self.region_container,
                 ft.Divider(height=1, color=MOCHA["surface1"]),
@@ -476,16 +520,28 @@ class DetailPanel(ft.Container):
 
 
 # ─── Empty State Widget ─────────────────────────────────────────────────────────
-def empty_state(message: str, sub: str, button_label: str, on_button) -> ft.Container:
+def empty_state(message: str, sub: str, button_label: str = None, on_button=None, tip: str = None) -> ft.Container:
+    controls = [
+        ft.Icon(ft.Icons.SPORTS_ESPORTS_OUTLINED, size=100, color=MOCHA["overlay0"]),
+        ft.Text(message, size=22, weight=ft.FontWeight.BOLD, color=MOCHA["text"], text_align=ft.TextAlign.CENTER),
+        ft.Text(sub, size=14, color=MOCHA["subtext0"], text_align=ft.TextAlign.CENTER),
+        ft.Container(height=16),
+    ]
+    if button_label and on_button:
+        controls.append(
+            ft.Button(button_label, icon=ft.Icons.ADD, bgcolor=MOCHA["mauve"], color=MOCHA["crust"],
+                      style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)), on_click=on_button)
+        )
+    if tip:
+        controls.append(
+            ft.Container(
+                content=ft.Text(tip, size=12, color=MOCHA["overlay1"], italic=True, text_align=ft.TextAlign.CENTER),
+                padding=ft.Padding.only(top=12),
+            )
+        )
     return ft.Container(
         content=ft.Column(
-            controls=[
-                ft.Icon(ft.Icons.SPORTS_ESPORTS_OUTLINED, size=80, color=MOCHA["overlay0"]),
-                ft.Text(message, size=22, weight=ft.FontWeight.BOLD, color=MOCHA["text"], text_align=ft.TextAlign.CENTER),
-                ft.Text(sub, size=14, color=MOCHA["subtext0"], text_align=ft.TextAlign.CENTER),
-                ft.Container(height=16),
-                ft.Button(button_label, icon=ft.Icons.ADD, bgcolor=MOCHA["mauve"], color=MOCHA["crust"], style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)), on_click=on_button),
-            ],
+            controls=controls,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=8,
@@ -920,8 +976,26 @@ class ImportScanView(ft.Column):
             except Exception:
                 pass
             _show_snack(self._pg, f"Scan complete: {id_count} identified, {un_count} unidentified", MOCHA["green"], 4000)
+            # Background thumbnail fetch
+            self._fetch_thumbnails_background()
             if self.on_scan_complete:
                 self.on_scan_complete()
+
+    def _fetch_thumbnails_background(self):
+        """Trigger background thumbnail download for identified ROMs."""
+        import threading
+        items = [(sf.matched_rom.system_name, sf.matched_rom.game_name)
+                 for sf in self.state.identified
+                 if sf.matched_rom and sf.matched_rom.system_name and sf.matched_rom.game_name]
+        if not items:
+            return
+        def _run():
+            _thumbnail_svc.fetch_batch_sync(items)
+            try:
+                self._pg.update()
+            except Exception:
+                pass
+        threading.Thread(target=_run, daemon=True).start()
 
 
 # ─── Tools & Organize View ──────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 from typing import List
 
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, jsonify, request, render_template_string, send_file
 from werkzeug.utils import secure_filename
 
 from .monitor import setup_runtime_monitor, monitor_action
@@ -366,6 +366,25 @@ def _scan_thread(folder, scan_archives, recursive, blindmatch_system=""):
             state['scan_progress'] = i + 1
     finally:
         state['scanning'] = False
+        # Background thumbnail fetch for identified ROMs
+        _bg_fetch_thumbnails()
+
+
+def _bg_fetch_thumbnails():
+    """Trigger background thumbnail download for all identified ROMs."""
+    import threading as _th
+    from rommanager.thumbnail_service import ThumbnailService
+    from rommanager.shared_config import THUMBNAILS_DIR
+    items = []
+    for sf in state.get('identified', []):
+        rom = getattr(sf, 'matched_rom', None)
+        if rom and getattr(rom, 'system_name', None) and getattr(rom, 'game_name', None):
+            items.append((rom.system_name, rom.game_name))
+    if items:
+        def _run():
+            ts = ThumbnailService(THUMBNAILS_DIR)
+            ts.fetch_batch_sync(items)
+        _th.Thread(target=_run, daemon=True).start()
 
 
 def _process_scanned(scanned, blindmatch_system=""):
@@ -734,6 +753,22 @@ def export_report():
         return jsonify({'error': str(e)}), 400
 
 
+# ── Thumbnail API ─────────────────────────────────────────────
+
+@app.route('/api/thumbnail/<path:system>/<path:game_name>')
+def api_thumbnail(system, game_name):
+    from rommanager.shared_config import THUMBNAILS_DIR
+    from rommanager.thumbnail_service import _sanitize_game_name, _system_folder
+    folder = _system_folder(system)
+    if not folder:
+        return '', 404
+    safe_name = _sanitize_game_name(game_name)
+    path = os.path.join(THUMBNAILS_DIR, folder, f"{safe_name}.png")
+    if os.path.isfile(path):
+        return send_file(path, mimetype='image/png')
+    return '', 404
+
+
 # ── Config endpoint ────────────────────────────────────────────
 
 @app.route('/api/config')
@@ -765,11 +800,63 @@ HTML_TEMPLATE = r'''
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .loader { border: 3px solid #334155; border-top: 3px solid #22d3ee; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; }
+        :root {
+            --bg: #1e1e2e;
+            --bg-dim: #181825;
+            --bg-deep: #11111b;
+            --surface0: #313244;
+            --surface1: #45475a;
+            --surface2: #585b70;
+            --text: #cdd6f4;
+            --subtext1: #bac2de;
+            --subtext0: #a6adc8;
+            --overlay2: #9399b2;
+            --overlay1: #7f849c;
+            --overlay0: #6c7086;
+            --primary: #cba6f7;
+            --secondary: #89b4fa;
+            --success: #a6e3a1;
+            --warning: #f9e2af;
+            --error: #f38ba8;
+            --info: #94e2d5;
+            --peach: #fab387;
+            --pink: #f5c2e7;
+            --sky: #89dceb;
+            --lavender: #b4befe;
+            --flamingo: #f2cdcd;
+            --rosewater: #f5e0dc;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); }
+        .loader { border: 3px solid var(--surface1); border-top: 3px solid var(--primary); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-        .modal-content { background: #1e293b; border: 1px solid #475569; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 24px; }
+        .modal-content { background: var(--bg-dim); border: 1px solid var(--surface1); border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 24px; }
+        @keyframes skeleton-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+        .skeleton { background: var(--surface0); border-radius: 6px; animation: skeleton-pulse 1.5s ease-in-out infinite; }
+        .skeleton-row { height: 44px; margin-bottom: 4px; }
+        .skeleton-card { width: 180px; height: 260px; border-radius: 12px; }
+        .dropzone { border: 2px dashed var(--overlay1); border-radius: 12px; padding: 24px; text-align: center; color: var(--overlay0); transition: all 0.2s ease; cursor: pointer; }
+        .dropzone.dragover { border-color: var(--primary); background: rgba(203, 166, 247, 0.05); color: var(--primary); }
+        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column-reverse; gap: 8px; max-width: 380px; }
+        .toast { padding: 12px 16px; border-radius: 10px; background: var(--surface0); border-left: 4px solid var(--info); box-shadow: 0 4px 20px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 10px; animation: toast-in 0.3s ease-out; position: relative; overflow: hidden; }
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--error); }
+        .toast.warning { border-left-color: var(--warning); }
+        .toast.info { border-left-color: var(--info); }
+        .toast .toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--overlay1); animation: toast-progress 4s linear forwards; }
+        @keyframes toast-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes toast-progress { from { width: 100%; } to { width: 0%; } }
+        .poster-card { width: 180px; border-radius: 12px; background: var(--surface0); border: 1px solid var(--surface1); overflow: hidden; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .poster-card:hover { transform: scale(1.03); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+        .poster-card img, .poster-card .poster-placeholder { width: 100%; height: 200px; object-fit: cover; }
+        .poster-placeholder { display: flex; align-items: center; justify-content: center; font-size: 48px; font-weight: bold; color: var(--overlay0); }
+        .poster-info { padding: 8px 10px; background: var(--bg-dim); }
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; text-align: center; }
+        .empty-state svg { width: 80px; height: 80px; color: var(--overlay0); margin-bottom: 16px; opacity: 0.6; }
+        .empty-state h3 { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+        .empty-state p { font-size: 14px; color: var(--subtext0); margin-bottom: 20px; }
+        .empty-state button { padding: 10px 24px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; border-radius: 8px; color: var(--bg-deep); font-weight: 600; font-size: 14px; cursor: pointer; transition: opacity 0.2s; }
+        .empty-state button:hover { opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -819,26 +906,26 @@ HTML_TEMPLATE = r'''
                 <div className="modal-overlay" onClick={onClose}>
                     <div className="modal-content" style={{maxWidth:'600px'}} onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-cyan-400">Browse {mode === 'dir' ? 'Folder' : 'File'}</h3>
-                            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&#x2715;</button>
+                            <h3 className="text-lg font-bold" style={{color:'var(--primary)'}}>Browse {mode === 'dir' ? 'Folder' : 'File'}</h3>
+                            <button onClick={onClose} className="text-xl" style={{color:'var(--subtext0)'}}>&#x2715;</button>
                         </div>
-                        <div className="p-2 bg-slate-900 border border-slate-700 rounded mb-2 text-xs font-mono truncate text-slate-300">
+                        <div className="p-2 rounded mb-2 text-xs font-mono truncate" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface1)',color:'var(--subtext1)'}}>
                             {path || "Root"}
                         </div>
-                        <div className="flex-1 overflow-auto bg-slate-900/50 border border-slate-700 rounded h-80 p-2">
-                            {loading ? <div className="text-center p-4 text-slate-500">Loading...</div> : 
+                        <div className="flex-1 overflow-auto rounded h-80 p-2" style={{backgroundColor:'var(--bg-dim)',border:'1px solid var(--surface1)'}}>
+                            {loading ? <div className="text-center p-4" style={{color:'var(--overlay1)'}}>Loading...</div> :
                              items.map((item, i) => (
                                 <div key={i} onClick={() => handleItemClick(item)}
-                                     className="flex items-center gap-2 p-2 hover:bg-slate-700 cursor-pointer rounded text-sm text-slate-300">
-                                    <span className="text-yellow-500 text-lg">{item.type === 'dir' ? '📁' : '📄'}</span>
-                                    <span className={item.type === 'dir' ? 'font-bold text-white' : ''}>{item.name}</span>
+                                     className="flex items-center gap-2 p-2 cursor-pointer rounded text-sm" style={{color:'var(--subtext1)'}}>
+                                    <span className="text-lg" style={{color:'var(--warning)'}}>{item.type === 'dir' ? '📁' : '📄'}</span>
+                                    <span className={item.type === 'dir' ? 'font-bold' : ''} style={item.type === 'dir' ? {color:'var(--text)'} : {}}>{item.name}</span>
                                 </div>
                             ))}
                         </div>
                         <div className="mt-4 flex justify-end gap-2">
-                            <button onClick={onClose} className="px-4 py-2 bg-slate-700 rounded-lg text-sm">Cancel</button>
+                            <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--surface1)'}}>Cancel</button>
                             {mode === 'dir' && (
-                                <button onClick={() => onSelect(path)} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium">
+                                <button onClick={() => onSelect(path)} className="px-4 py-2 rounded-lg text-sm font-medium" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>
                                     Select This Folder
                                 </button>
                             )}
@@ -850,36 +937,51 @@ HTML_TEMPLATE = r'''
 
         /* ── Region badge ─────────────────────── */
         const REGION_CSS = {
-            'USA':    { bg: 'bg-blue-900/50',   fg: 'text-blue-400' },
-            'Europe': { bg: 'bg-purple-900/50', fg: 'text-purple-400' },
-            'Japan':  { bg: 'bg-red-900/50',    fg: 'text-red-400' },
-            'World':  { bg: 'bg-green-900/50',  fg: 'text-green-400' },
-            'Brazil': { bg: 'bg-lime-900/50',   fg: 'text-lime-400' },
-            'Korea':  { bg: 'bg-orange-900/50', fg: 'text-orange-400' },
-            'China':  { bg: 'bg-yellow-900/50', fg: 'text-yellow-400' },
+            'USA':    { bg: 'rgba(137,180,250,0.15)', fg: 'var(--secondary)' },
+            'Europe': { bg: 'rgba(203,166,247,0.15)', fg: 'var(--primary)' },
+            'Japan':  { bg: 'rgba(243,139,168,0.15)', fg: 'var(--error)' },
+            'World':  { bg: 'rgba(166,227,161,0.15)', fg: 'var(--success)' },
+            'Brazil': { bg: 'rgba(249,226,175,0.15)', fg: 'var(--warning)' },
+            'Korea':  { bg: 'rgba(250,179,135,0.15)', fg: 'var(--peach)' },
+            'China':  { bg: 'rgba(242,205,205,0.15)', fg: 'var(--flamingo)' },
         };
-        const defaultRegionCSS = { bg: 'bg-slate-700', fg: 'text-slate-400' };
+        const defaultRegionCSS = { bg: 'rgba(127,132,156,0.15)', fg: 'var(--overlay1)' };
         function RegionBadge({ region }) {
             const c = REGION_CSS[region] || defaultRegionCSS;
-            return <span className={`px-2 py-0.5 rounded text-xs ${c.bg} ${c.fg}`}>{region || 'Unknown'}</span>;
+            return <span style={{background: c.bg, color: c.fg, padding: '2px 8px', borderRadius: '4px', fontSize: '12px'}}>{region || 'Unknown'}</span>;
         }
 
-        /* ── Notification ─────────────────────── */
-        function Notification({ notification, onClose }) {
-            if (!notification) return null;
-            const colors = {
-                success: 'bg-emerald-900/90 border-emerald-600',
-                error:   'bg-red-900/90 border-red-600',
-                warning: 'bg-amber-900/90 border-amber-600',
-                info:    'bg-sky-900/90 border-sky-600',
-            };
+        /* ── Toast Notification System ──────────── */
+        const ToastContext = React.createContext(null);
+        function ToastProvider({ children }) {
+            const [toasts, setToasts] = React.useState([]);
+            const nextId = React.useRef(0);
+            const addToast = React.useCallback((message, type = 'info') => {
+                const id = nextId.current++;
+                setToasts(prev => [...prev.slice(-2), { id, message, type }]);
+                setTimeout(() => {
+                    setToasts(prev => prev.filter(t => t.id !== id));
+                }, 4000);
+            }, []);
+            const removeToast = React.useCallback((id) => {
+                setToasts(prev => prev.filter(t => t.id !== id));
+            }, []);
             return (
-                <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 border ${colors[notification.type] || colors.info}`}>
-                    <span>{notification.message}</span>
-                    <button onClick={onClose} className="ml-2 hover:opacity-70">&#x2715;</button>
-                </div>
+                <ToastContext.Provider value={addToast}>
+                    {children}
+                    <div className="toast-container">
+                        {toasts.map(t => (
+                            <div key={t.id} className={`toast ${t.type}`} onClick={() => removeToast(t.id)}>
+                                <span style={{flex:1}}>{t.message}</span>
+                                <span style={{cursor:'pointer',opacity:0.6}}>&#x2715;</span>
+                                <div className="toast-progress"></div>
+                            </div>
+                        ))}
+                    </div>
+                </ToastContext.Provider>
             );
         }
+        function useToast() { return React.useContext(ToastContext); }
 
         /* ── Modal ────────────────────────────── */
         function Modal({ title, children, onClose }) {
@@ -887,11 +989,96 @@ HTML_TEMPLATE = r'''
                 <div className="modal-overlay" onClick={onClose}>
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-lg font-bold text-cyan-400">{title}</h2>
-                            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&#x2715;</button>
+                            <h2 className="text-lg font-bold" style={{color:'var(--primary)'}}>{title}</h2>
+                            <button onClick={onClose} className="text-xl" style={{color:'var(--subtext0)'}}>&#x2715;</button>
                         </div>
                         {children}
                     </div>
+                </div>
+            );
+        }
+
+        /* ── Poster Card (Grid View) ────────────── */
+        function PosterCard({ rom }) {
+            const thumbSrc = `/api/thumbnail/${encodeURIComponent(rom.system)}/${encodeURIComponent(rom.game_name)}`;
+            const [imgError, setImgError] = React.useState(false);
+            const initial = (rom.game_name || '?')[0].toUpperCase();
+            const colors = ['#cba6f7','#89b4fa','#a6e3a1','#f9e2af','#f38ba8','#fab387','#94e2d5','#89dceb'];
+            const colorIdx = rom.game_name ? rom.game_name.charCodeAt(0) % colors.length : 0;
+            return (
+                <div className="poster-card">
+                    {!imgError ? (
+                        <img src={thumbSrc} alt={rom.game_name}
+                            onError={() => setImgError(true)}
+                            style={{width:'100%',height:'200px',objectFit:'cover'}} />
+                    ) : (
+                        <div className="poster-placeholder" style={{background: `linear-gradient(135deg, ${colors[colorIdx]}22, ${colors[colorIdx]}44)`}}>
+                            {initial}
+                        </div>
+                    )}
+                    <div className="poster-info">
+                        <div style={{fontSize:'12px',fontWeight:600,color:'var(--text)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{rom.game_name}</div>
+                        <div style={{fontSize:'10px',color:'var(--subtext0)',marginTop:'2px'}}>{rom.system}</div>
+                        <div style={{marginTop:'4px'}}><RegionBadge region={rom.region} /></div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ── Dropzone ───────────────────────────── */
+        function Dropzone({ label, onDrop }) {
+            const [dragover, setDragover] = React.useState(false);
+            return (
+                <div className={`dropzone ${dragover ? 'dragover' : ''}`}
+                    onDragOver={e => { e.preventDefault(); setDragover(true); }}
+                    onDragLeave={() => setDragover(false)}
+                    onDrop={e => {
+                        e.preventDefault(); setDragover(false);
+                        const paths = [];
+                        if (e.dataTransfer.files.length > 0) {
+                            for (let f of e.dataTransfer.files) paths.push(f.name);
+                        }
+                        if (paths.length > 0 && onDrop) onDrop(paths);
+                    }}>
+                    <div style={{fontSize:'28px',marginBottom:'8px',opacity:0.5}}>&#128230;</div>
+                    <div>{label}</div>
+                </div>
+            );
+        }
+
+        /* ── Skeleton Loaders ───────────────────── */
+        function SkeletonTable({ rows = 8 }) {
+            return (
+                <div style={{padding:'4px'}}>
+                    {Array.from({length: rows}).map((_, i) => (
+                        <div key={i} className="skeleton skeleton-row" style={{animationDelay: `${i * 0.1}s`}}></div>
+                    ))}
+                </div>
+            );
+        }
+        function SkeletonGrid({ count = 8 }) {
+            return (
+                <div style={{display:'flex',flexWrap:'wrap',gap:'16px',padding:'8px'}}>
+                    {Array.from({length: count}).map((_, i) => (
+                        <div key={i} className="skeleton skeleton-card" style={{animationDelay: `${i * 0.08}s`}}></div>
+                    ))}
+                </div>
+            );
+        }
+
+        /* ── Empty State ────────────────────────── */
+        function EmptyState({ icon, heading, subtext, ctaLabel, onCta }) {
+            const icons = {
+                gamepad: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875S10.5 3.09 10.5 4.125c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 01-.657.643 48.491 48.491 0 01-4.163-.3c-1.108-.128-2.18.225-2.837.914a2.26 2.26 0 00-.418.55L1.293 10.77a1 1 0 00.668 1.47c.637.112 1.287.195 1.942.249 3.726.308 7.468.308 11.194 0a26.1 26.1 0 001.942-.249 1 1 0 00.668-1.47L15.825 7.894a2.26 2.26 0 00-.418-.55c-.657-.689-1.729-1.042-2.837-.914a48.491 48.491 0 01-4.163.3.64.64 0 01-.657-.643v0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c-2.472 0-4.9-.184-7.274-.54a1 1 0 00-1.09.618l-1.454 3.926A2.25 2.25 0 004.293 19.5h15.414a2.25 2.25 0 002.111-2.746l-1.454-3.926a1 1 0 00-1.09-.618A49.261 49.261 0 0112 12.75z" /></svg>,
+                folder_search: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM13.5 10.5H10.5m0 0H7.5m3 0V7.5m0 3V13.5" /></svg>,
+                search_off: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>,
+            };
+            return (
+                <div className="empty-state">
+                    {icons[icon] || icons.search_off}
+                    <h3>{heading}</h3>
+                    <p>{subtext}</p>
+                    {ctaLabel && <button onClick={onCta}>{ctaLabel}</button>}
                 </div>
             );
         }
@@ -911,7 +1098,7 @@ HTML_TEMPLATE = r'''
             const [blindmatchSystem, setBlindmatchSystem] = useState('');
             const [activeTab, setActiveTab] = useState('identified');
             const [selected, setSelected] = useState(new Set());
-            const [notification, setNotification] = useState(null);
+            const [viewMode, setViewMode] = useState('list');
             const [searchQuery, setSearchQuery] = useState('');
             const searchTimer = useRef(null);
             const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -950,9 +1137,9 @@ HTML_TEMPLATE = r'''
             const [dlDelay, setDlDelay] = useState(5);
             const dlPollRef = useRef(null);
 
+            const toast = useToast();
             const notify = (type, message) => {
-                setNotification({ type, message });
-                setTimeout(() => setNotification(null), 4000);
+                toast(message, type);
             };
 
             const openBrowser = (mode, setter) => {
@@ -1286,8 +1473,8 @@ HTML_TEMPLATE = r'''
             const comp = missing.completeness || {};
 
             return (
-                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-                    <Notification notification={notification} onClose={() => setNotification(null)} />
+                <div className="min-h-screen p-6" style={{background:'linear-gradient(135deg, var(--bg), var(--bg-dim), var(--bg))',color:'var(--text)'}}>
+
                     {browserMode && <FileBrowser mode={browserMode} onSelect={browserCallback} onClose={() => setBrowserMode(null)} />}
 
                     {/* ── Preview Modal ── */}
@@ -1295,24 +1482,24 @@ HTML_TEMPLATE = r'''
                         <Modal title="Organization Preview" onClose={() => setShowPreview(false)}>
                             <div className="space-y-3 text-sm">
                                 <div className="flex gap-6">
-                                    <span className="text-slate-400">Strategy: <span className="text-white">{previewData.strategy}</span></span>
-                                    <span className="text-slate-400">Files: <span className="text-white">{previewData.total_files}</span></span>
-                                    <span className="text-slate-400">Size: <span className="text-white">{previewData.total_size_formatted}</span></span>
+                                    <span style={{color:'var(--subtext0)'}}>Strategy: <span style={{color:'var(--text)'}}>{previewData.strategy}</span></span>
+                                    <span style={{color:'var(--subtext0)'}}>Files: <span style={{color:'var(--text)'}}>{previewData.total_files}</span></span>
+                                    <span style={{color:'var(--subtext0)'}}>Size: <span style={{color:'var(--text)'}}>{previewData.total_size_formatted}</span></span>
                                 </div>
-                                <div className="max-h-60 overflow-auto bg-slate-900 rounded p-2">
+                                <div className="max-h-60 overflow-auto rounded p-2" style={{backgroundColor:'var(--bg)'}}>
                                     {previewData.actions.slice(0, 200).map((a, i) => (
-                                        <div key={i} className="py-1 border-b border-slate-800 text-xs">
-                                            <span className="text-slate-500">{a.action}</span>
-                                            <span className="text-cyan-400 ml-2">{a.source.split(/[/\\]/).pop()}</span>
-                                            <span className="text-slate-600 mx-1">&#8594;</span>
-                                            <span className="text-emerald-400">{a.destination}</span>
+                                        <div key={i} className="py-1 text-xs" style={{borderBottom:'1px solid var(--surface0)'}}>
+                                            <span style={{color:'var(--overlay1)'}}>{a.action}</span>
+                                            <span className="ml-2" style={{color:'var(--primary)'}}>{a.source.split(/[/\\]/).pop()}</span>
+                                            <span className="mx-1" style={{color:'var(--surface2)'}}>&#8594;</span>
+                                            <span style={{color:'var(--success)'}}>{a.destination}</span>
                                         </div>
                                     ))}
-                                    {previewData.actions.length > 200 && <div className="text-slate-500 text-xs py-1">... and {previewData.actions.length - 200} more</div>}
+                                    {previewData.actions.length > 200 && <div className="text-xs py-1" style={{color:'var(--overlay1)'}}>... and {previewData.actions.length - 200} more</div>}
                                 </div>
                                 <div className="flex gap-2 justify-end">
-                                    <button onClick={() => setShowPreview(false)} className="px-4 py-2 bg-slate-700 rounded-lg">Cancel</button>
-                                    <button onClick={doOrganize} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium">Execute</button>
+                                    <button onClick={() => setShowPreview(false)} className="px-4 py-2 rounded-lg" style={{backgroundColor:'var(--surface1)'}}>Cancel</button>
+                                    <button onClick={doOrganize} className="px-4 py-2 rounded-lg font-medium" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>Execute</button>
                                 </div>
                             </div>
                         </Modal>
@@ -1324,19 +1511,19 @@ HTML_TEMPLATE = r'''
                             <div className="space-y-4">
                                 <div className="flex gap-2">
                                     <input type="text" value={collectionName} onChange={e => setCollectionName(e.target.value)}
-                                        placeholder="Collection name" className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500" />
-                                    <button onClick={saveCollection} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-medium">Save Current</button>
+                                        placeholder="Collection name" className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
+                                    <button onClick={saveCollection} className="px-4 py-2 rounded-lg text-sm font-medium" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>Save Current</button>
                                 </div>
                                 {collections.length > 0 && (
                                     <div className="space-y-2">
-                                        <h3 className="text-sm font-medium text-slate-400">Saved Collections</h3>
+                                        <h3 className="text-sm font-medium" style={{color:'var(--subtext0)'}}>Saved Collections</h3>
                                         {collections.map((c, i) => (
-                                            <div key={i} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+                                            <div key={i} className="flex items-center justify-between p-3 rounded-lg" style={{backgroundColor:'var(--bg-dim)'}}>
                                                 <div>
                                                     <div className="font-medium">{c.name}</div>
-                                                    <div className="text-xs text-slate-500">{c.dat_count} DATs, {c.identified_count} identified - {c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}</div>
+                                                    <div className="text-xs" style={{color:'var(--overlay1)'}}>{c.dat_count} DATs, {c.identified_count} identified - {c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}</div>
                                                 </div>
-                                                <button onClick={() => loadCollection(c.filepath)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm">Load</button>
+                                                <button onClick={() => loadCollection(c.filepath)} className="px-3 py-1 rounded text-sm" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>Load</button>
                                             </div>
                                         ))}
                                     </div>
@@ -1350,25 +1537,25 @@ HTML_TEMPLATE = r'''
                         <Modal title="DAT Library" onClose={() => setShowDatLibrary(false)}>
                             <div className="space-y-4">
                                 <div className="flex gap-2">
-                                    <button onClick={importToLibrary} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm">Import Current DAT Path</button>
-                                    <button onClick={openDatSources} className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">DAT Sources</button>
+                                    <button onClick={importToLibrary} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)'}}>Import Current DAT Path</button>
+                                    <button onClick={openDatSources} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}}>DAT Sources</button>
                                 </div>
                                 {libraryDats.length > 0 ? (
                                     <div className="space-y-2">
                                         {libraryDats.map((d, i) => (
-                                            <div key={i} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+                                            <div key={i} className="flex items-center justify-between p-3 rounded-lg" style={{backgroundColor:'var(--bg-dim)'}}>
                                                 <div>
                                                     <div className="font-medium text-sm">{d.system_name || d.name}</div>
-                                                    <div className="text-xs text-slate-500">{d.rom_count.toLocaleString()} ROMs - v{d.version || '?'}</div>
+                                                    <div className="text-xs" style={{color:'var(--overlay1)'}}>{d.rom_count.toLocaleString()} ROMs - v{d.version || '?'}</div>
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => loadFromLibrary(d.id)} className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 rounded text-xs">Load</button>
-                                                    <button onClick={() => removeFromLibrary(d.id)} className="px-3 py-1 bg-red-900/50 hover:bg-red-800/50 text-red-400 rounded text-xs">Remove</button>
+                                                    <button onClick={() => loadFromLibrary(d.id)} className="px-3 py-1 rounded text-xs" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>Load</button>
+                                                    <button onClick={() => removeFromLibrary(d.id)} className="px-3 py-1 rounded text-xs" style={{backgroundColor:'rgba(243,139,168,0.15)',color:'var(--error)'}}>Remove</button>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
-                                ) : <p className="text-slate-500 text-sm">No DATs in library. Import a DAT file or check DAT Sources.</p>}
+                                ) : <p className="text-sm" style={{color:'var(--overlay1)'}}>No DATs in library. Import a DAT file or check DAT Sources.</p>}
                             </div>
                         </Modal>
                     )}
@@ -1378,11 +1565,11 @@ HTML_TEMPLATE = r'''
                         <Modal title="DAT Sources" onClose={() => setShowDatSources(false)}>
                             <div className="space-y-3">
                                 {datSources.map((s, i) => (
-                                    <div key={i} className="p-3 bg-slate-900/50 rounded-lg">
-                                        <div className="font-medium text-sm text-cyan-300">{s.name}</div>
-                                        <div className="text-xs text-slate-400 mt-1">{s.description}</div>
+                                    <div key={i} className="p-3 rounded-lg" style={{backgroundColor:'var(--bg-dim)'}}>
+                                        <div className="font-medium text-sm" style={{color:'var(--secondary)'}}>{s.name}</div>
+                                        <div className="text-xs mt-1" style={{color:'var(--subtext0)'}}>{s.description}</div>
                                         <a href={s.url} target="_blank" rel="noopener noreferrer"
-                                            className="text-xs text-blue-400 hover:underline mt-1 inline-block">Open Page &#8599;</a>
+                                            className="text-xs hover:underline mt-1 inline-block" style={{color:'var(--secondary)'}}>Open Page &#8599;</a>
                                     </div>
                                 ))}
                             </div>
@@ -1396,23 +1583,23 @@ HTML_TEMPLATE = r'''
                                 <div className="flex gap-2">
                                     <input type="text" value={archiveQuery} onChange={e => setArchiveQuery(e.target.value)}
                                         onKeyDown={e => e.key === 'Enter' && searchArchive()}
-                                        placeholder="Search for ROMs..." className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500" />
+                                        placeholder="Search for ROMs..." className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
                                     <button onClick={searchArchive} disabled={archiveSearching}
-                                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 rounded-lg text-sm flex items-center gap-2">
+                                        className="px-4 py-2 disabled:opacity-50 rounded-lg text-sm flex items-center gap-2" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>
                                         {archiveSearching && <span className="loader" style={{width:14,height:14}}></span>}
                                         Search
                                     </button>
                                 </div>
                                 <div className="max-h-60 overflow-auto space-y-2">
                                     {archiveResults.map((r, i) => (
-                                        <div key={i} className="p-3 bg-slate-900/50 rounded-lg">
+                                        <div key={i} className="p-3 rounded-lg" style={{backgroundColor:'var(--bg-dim)'}}>
                                             <div className="font-medium text-sm">{r.title || r.identifier}</div>
-                                            <div className="text-xs text-slate-500 mt-1">{r.description?.substring(0, 120) || 'No description'}</div>
+                                            <div className="text-xs mt-1" style={{color:'var(--overlay1)'}}>{r.description?.substring(0, 120) || 'No description'}</div>
                                             <a href={`https://archive.org/details/${r.identifier}`} target="_blank" rel="noopener noreferrer"
-                                                className="text-xs text-blue-400 hover:underline mt-1 inline-block">View on Archive.org &#8599;</a>
+                                                className="text-xs hover:underline mt-1 inline-block" style={{color:'var(--secondary)'}}>View on Archive.org &#8599;</a>
                                         </div>
                                     ))}
-                                    {archiveResults.length === 0 && !archiveSearching && <p className="text-slate-500 text-sm text-center py-4">Enter a search term to find ROMs on archive.org</p>}
+                                    {archiveResults.length === 0 && !archiveSearching && <p className="text-sm text-center py-4" style={{color:'var(--overlay1)'}}>Enter a search term to find ROMs on archive.org</p>}
                                 </div>
                             </div>
                         </Modal>
@@ -1423,20 +1610,20 @@ HTML_TEMPLATE = r'''
                         <div className="modal-overlay" onClick={() => setShowMyrient(false)}>
                             <div className="modal-content" style={{maxWidth:'1000px',maxHeight:'85vh'}} onClick={e => e.stopPropagation()}>
                                 <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-lg font-bold text-cyan-400">Myrient ROM Browser</h2>
-                                    <button onClick={() => setShowMyrient(false)} className="text-slate-400 hover:text-white text-xl">&#x2715;</button>
+                                    <h2 className="text-lg font-bold" style={{color:'var(--primary)'}}>Myrient ROM Browser</h2>
+                                    <button onClick={() => setShowMyrient(false)} className="text-xl" style={{color:'var(--subtext0)'}}>&#x2715;</button>
                                 </div>
                                 <div className="flex gap-4" style={{height:'60vh'}}>
                                     {/* System list */}
                                     <div className="w-1/3 flex flex-col">
-                                        <div className="text-sm font-medium text-slate-400 mb-1">Systems</div>
+                                        <div className="text-sm font-medium mb-1" style={{color:'var(--subtext0)'}}>Systems</div>
                                         <input type="text" value={myrientSysSearch} onChange={e => setMyrientSysSearch(e.target.value)}
-                                            placeholder="Filter systems..." className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs mb-2 focus:outline-none focus:border-cyan-500" />
-                                        <div className="flex-1 overflow-auto bg-slate-900/50 rounded">
+                                            placeholder="Filter systems..." className="px-2 py-1 rounded text-xs mb-2 focus:outline-none" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface1)',color:'var(--text)'}} />
+                                        <div className="flex-1 overflow-auto rounded" style={{backgroundColor:'var(--bg-dim)'}}>
                                             {myrientSystems.filter(s => !myrientSysSearch || s.name.toLowerCase().includes(myrientSysSearch.toLowerCase())).map((s, i) => (
                                                 <div key={i} onClick={() => loadMyrientFiles(s.name)}
-                                                    className={`px-3 py-2 text-xs cursor-pointer border-b border-slate-800 hover:bg-slate-700/50 ${myrientSelectedSys === s.name ? 'bg-cyan-900/30 text-cyan-300' : ''}`}>
-                                                    <span className="text-slate-500">[{s.category}]</span> {s.name}
+                                                    className="px-3 py-2 text-xs cursor-pointer" style={{borderBottom:'1px solid var(--surface0)',color: myrientSelectedSys === s.name ? 'var(--secondary)' : 'var(--text)',backgroundColor: myrientSelectedSys === s.name ? 'rgba(203,166,247,0.1)' : 'transparent'}}>
+                                                    <span style={{color:'var(--overlay1)'}}>[{s.category}]</span> {s.name}
                                                 </div>
                                             ))}
                                         </div>
@@ -1446,35 +1633,35 @@ HTML_TEMPLATE = r'''
                                         <div className="flex gap-2 mb-2">
                                             <input type="text" value={myrientFileSearch} onChange={e => setMyrientFileSearch(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && searchMyrientFiles()}
-                                                placeholder="Search files..." className="flex-1 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs focus:outline-none focus:border-cyan-500" />
-                                            <button onClick={searchMyrientFiles} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs">Search</button>
-                                            <span className="text-xs text-slate-500 self-center">{myrientFiles.length} files</span>
+                                                placeholder="Search files..." className="flex-1 px-2 py-1 rounded text-xs focus:outline-none" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface1)',color:'var(--text)'}} />
+                                            <button onClick={searchMyrientFiles} className="px-3 py-1 rounded text-xs" style={{backgroundColor:'var(--surface1)'}}>Search</button>
+                                            <span className="text-xs self-center" style={{color:'var(--overlay1)'}}>{myrientFiles.length} files</span>
                                         </div>
-                                        <div className="flex-1 overflow-auto bg-slate-900/50 rounded" id="myrient-files">
-                                            {myrientLoading ? <div className="p-4 text-center text-slate-500"><span className="loader"></span> Loading...</div> :
-                                                myrientFiles.length === 0 ? <div className="p-4 text-center text-slate-500">Select a system to browse files</div> :
+                                        <div className="flex-1 overflow-auto rounded" style={{backgroundColor:'var(--bg-dim)'}} id="myrient-files">
+                                            {myrientLoading ? <div className="p-4 text-center" style={{color:'var(--overlay1)'}}><span className="loader"></span> Loading...</div> :
+                                                myrientFiles.length === 0 ? <div className="p-4 text-center" style={{color:'var(--overlay1)'}}>Select a system to browse files</div> :
                                                 myrientFiles.map((f, i) => (
-                                                    <div key={i} className="px-3 py-1.5 text-xs cursor-pointer border-b border-slate-800 hover:bg-slate-700/50 flex justify-between items-center myrient-file-row"
-                                                        onClick={e => e.currentTarget.classList.toggle('bg-cyan-900/30')}>
+                                                    <div key={i} className="px-3 py-1.5 text-xs cursor-pointer flex justify-between items-center myrient-file-row" style={{borderBottom:'1px solid var(--surface0)'}}
+                                                        onClick={e => e.currentTarget.classList.toggle('myrient-selected')}>
                                                         <span className="truncate mr-2">{f.name}</span>
-                                                        <span className="text-slate-500 whitespace-nowrap">{f.size_text || ''}</span>
+                                                        <span className="whitespace-nowrap" style={{color:'var(--overlay1)'}}>{f.size_text || ''}</span>
                                                     </div>
                                                 ))}
                                         </div>
                                         <div className="flex gap-2 mt-2 items-center">
                                             <input type="text" value={dlDest} onChange={e => setDlDest(e.target.value)}
-                                                placeholder="Download destination folder..." className="flex-1 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs focus:outline-none focus:border-cyan-500" />
-                                            <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs" title="Browse folder">Browse</button>
+                                                placeholder="Download destination folder..." className="flex-1 px-2 py-1 rounded text-xs focus:outline-none" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface1)',color:'var(--text)'}} />
+                                            <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 py-1 rounded text-xs" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}} title="Browse folder">Browse</button>
 
                                             <button onClick={() => {
                                                 const selected = [];
-                                                document.querySelectorAll('#myrient-files .bg-cyan-900\\/30').forEach(el => {
+                                                document.querySelectorAll('#myrient-files .myrient-selected').forEach(el => {
                                                     const idx = Array.from(el.parentNode.children).indexOf(el);
                                                     if (myrientFiles[idx]) selected.push({name: myrientFiles[idx].name, url: myrientFiles[idx].url});
                                                 });
                                                 if (selected.length === 0) { notify('warning', 'Click on files to select them first'); return; }
                                                 downloadMyrientFiles(selected, dlDest);
-                                            }} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-medium whitespace-nowrap">
+                                            }} className="px-3 py-1 rounded text-xs font-medium whitespace-nowrap" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)'}}>
                                                 Download Selected
                                             </button>
                                         </div>
@@ -1489,54 +1676,52 @@ HTML_TEMPLATE = r'''
                         <Modal title="Download Missing ROMs" onClose={() => { if (!dlActive) setShowDownloadDialog(false); }}>
                             <div className="space-y-4">
                                 <div>
-                                    <label className="text-sm text-slate-400">Download to (scan folder):</label>
+                                    <label className="text-sm" style={{color:'var(--subtext0)'}}>Download to (scan folder):</label>
                                     <div className="flex gap-2 mt-1">
                                         <input type="text" value={dlDest} onChange={e => setDlDest(e.target.value)}
-                                            placeholder="C:\path\to\roms" className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500" />
-                                        <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Browse folder">Browse</button>
+                                            placeholder="C:\path\to\roms" className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
+                                        <button onClick={()=>openBrowser('dir', setDlDest)} className="px-3 rounded text-sm" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}} title="Browse folder">Browse</button>
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-sm text-slate-400">Delay between downloads (seconds):</label>
+                                    <label className="text-sm" style={{color:'var(--subtext0)'}}>Delay between downloads (seconds):</label>
                                     <input type="number" min="0" max="60" value={dlDelay} onChange={e => setDlDelay(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))}
                                         disabled={dlActive}
-                                        className="mt-1 ml-2 w-20 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50" />
+                                        className="mt-1 ml-2 w-20 px-3 py-2 rounded-lg text-sm focus:outline-none disabled:opacity-50" style={{backgroundColor:'var(--bg)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
                                 </div>
                                 {dlProgress && (
                                     <div className="space-y-2">
                                         <div className="flex justify-between text-sm">
-                                            <span className="text-slate-400">{dlProgress.current_rom || 'Starting...'}</span>
-                                            <span className="text-cyan-400">{dlProgress.completed}/{dlProgress.total_count}</span>
+                                            <span style={{color:'var(--subtext0)'}}>{dlProgress.current_rom || 'Starting...'}</span>
+                                            <span style={{color:'var(--primary)'}}>{dlProgress.completed}/{dlProgress.total_count}</span>
                                         </div>
-                                        <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-                                            <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all"
-                                                style={{width: `${dlProgress.total_count > 0 ? (dlProgress.completed + dlProgress.failed) / dlProgress.total_count * 100 : 0}%`}}></div>
+                                        <div className="w-full h-2 rounded-full overflow-hidden" style={{backgroundColor:'var(--surface1)'}}>
+                                            <div className="h-full transition-all" style={{background:'linear-gradient(to right, var(--success), var(--primary))',width: `${dlProgress.total_count > 0 ? (dlProgress.completed + dlProgress.failed) / dlProgress.total_count * 100 : 0}%`}}></div>
                                         </div>
                                         {dlProgress.current_total > 0 && (
-                                            <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                                <div className="h-full bg-cyan-600 transition-all"
-                                                    style={{width: `${dlProgress.current_bytes / dlProgress.current_total * 100}%`}}></div>
+                                            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{backgroundColor:'var(--surface1)'}}>
+                                                <div className="h-full transition-all" style={{backgroundColor:'var(--primary)',width: `${dlProgress.current_bytes / dlProgress.current_total * 100}%`}}></div>
                                             </div>
                                         )}
-                                        <div className="text-xs text-slate-500">{dlProgress.completed} OK, {dlProgress.failed} failed{dlProgress.cancelled > 0 ? `, ${dlProgress.cancelled} cancelled` : ''}</div>
+                                        <div className="text-xs" style={{color:'var(--overlay1)'}}>{dlProgress.completed} OK, {dlProgress.failed} failed{dlProgress.cancelled > 0 ? `, ${dlProgress.cancelled} cancelled` : ''}</div>
                                     </div>
                                 )}
                                 {dlLog.length > 0 && (
-                                    <div className="max-h-32 overflow-auto bg-slate-900 rounded p-2 text-xs font-mono text-slate-400">
+                                    <div className="max-h-32 overflow-auto rounded p-2 text-xs font-mono" style={{backgroundColor:'var(--bg)',color:'var(--subtext0)'}}>
                                         {dlLog.map((l, i) => <div key={i}>{l}</div>)}
                                     </div>
                                 )}
                                 <div className="flex gap-2 justify-end">
                                     {!dlActive ? (
                                         <>
-                                            <button onClick={() => setShowDownloadDialog(false)} className="px-4 py-2 bg-slate-700 rounded-lg text-sm">Close</button>
-                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Action unavailable</button>
+                                            <button onClick={() => setShowDownloadDialog(false)} className="px-4 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--surface1)'}}>Close</button>
+                                            <button onClick={() => startDownloadMissing()} className="px-4 py-2 rounded-lg text-sm font-medium" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)'}}>Action unavailable</button>
                                         </>
                                     ) : (
                                         <>
-                                            <button onClick={pauseDl} className="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-sm">Pause</button>
-                                            <button onClick={resumeDl} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">Resume</button>
-                                            <button onClick={cancelDl} className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm">Cancel</button>
+                                            <button onClick={pauseDl} className="px-4 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--warning)',color:'var(--bg-deep)'}}>Pause</button>
+                                            <button onClick={resumeDl} className="px-4 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}}>Resume</button>
+                                            <button onClick={cancelDl} className="px-4 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--error)',color:'var(--bg-deep)'}}>Cancel</button>
                                         </>
                                     )}
                                 </div>
@@ -1550,41 +1735,42 @@ HTML_TEMPLATE = r'''
                             <div className="flex items-center gap-4">
                                 <div className="text-4xl">&#127918;</div>
                                 <div>
-                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">R0MM</h1>
-                                    <p className="text-slate-400">ver 0.30rc &mdash; Multi-DAT, Collections, Missing ROMs</p>
+                                    <h1 className="text-3xl font-bold" style={{background:'linear-gradient(135deg, var(--primary), var(--secondary))',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>R0MM</h1>
+                                    <p style={{color:'var(--subtext0)'}}>ver 0.30rc &mdash; Multi-DAT, Collections, Missing ROMs</p>
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={newSession} className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm">Nova sessão</button>
-                                <button onClick={openCollections} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Collections</button>
-                                <button onClick={openDatLibrary} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">DAT Library</button>
-                                <button onClick={openMyrientBrowser} className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm">Online Browser (disabled)</button>
+                                <button onClick={newSession} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--error)',color:'var(--bg-deep)'}}>Nova sessao</button>
+                                <button onClick={openCollections} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--surface1)'}}>Collections</button>
+                                <button onClick={openDatLibrary} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--surface1)'}}>DAT Library</button>
+                                <button onClick={openMyrientBrowser} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)',opacity:0.5}}>Online Browser (disabled)</button>
                             </div>
                         </div>
 
                         {/* ── DAT & Scan Cards ── */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             {/* DAT File */}
-                            <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-5">
+                            <div className="backdrop-blur rounded-xl p-5" style={{backgroundColor:'var(--surface0)',border:'1px solid var(--surface1)'}}>
                                 <h2 className="font-semibold mb-4 flex items-center gap-2">
-                                    <span className="text-cyan-400">&#128193;</span> DAT Files
+                                    <span style={{color:'var(--primary)'}}>&#128193;</span> DAT Files
                                 </h2>
                                 <div className="flex gap-2 mb-3">
                                     <input type="text" value={datPath} onChange={e => setDatPath(e.target.value)}
                                         placeholder="C:\path\to\nointro.dat"
-                                        className="flex-1 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                    <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
-                                    <button onClick={loadDat} className="ml-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium transition text-sm">Add</button>
+                                        className="flex-1 px-4 py-2 rounded-lg focus:outline-none text-sm" style={{backgroundColor:'var(--bg-dim)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
+                                    <button onClick={()=>openBrowser('file', setDatPath)} className="px-3 rounded-l-none rounded-r-lg" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}} title="Browse folder">Browse</button>
+                                    <button onClick={loadDat} className="ml-2 px-4 py-2 rounded-lg font-medium transition text-sm" style={{backgroundColor:'var(--primary)',color:'var(--bg-deep)'}}>Add</button>
                                 </div>
+                                <Dropzone label="Drop DAT files here" onDrop={paths => { if (paths[0]) setDatPath(paths[0]); }} />
                                 {(status.dats_loaded || []).length > 0 && (
-                                    <div className="space-y-2 max-h-32 overflow-auto">
+                                    <div className="space-y-2 max-h-32 overflow-auto mt-3">
                                         {status.dats_loaded.map((d, i) => (
-                                            <div key={i} className="flex items-center justify-between p-2 bg-slate-900/50 rounded text-sm">
+                                            <div key={i} className="flex items-center justify-between p-2 rounded text-sm" style={{backgroundColor:'var(--bg-dim)'}}>
                                                 <div>
-                                                    <span className="text-cyan-400 font-medium">{d.system_name || d.name}</span>
-                                                    <span className="text-slate-500 ml-2">({d.rom_count.toLocaleString()} ROMs)</span>
+                                                    <span className="font-medium" style={{color:'var(--primary)'}}>{d.system_name || d.name}</span>
+                                                    <span className="ml-2" style={{color:'var(--overlay1)'}}>({d.rom_count.toLocaleString()} ROMs)</span>
                                                 </div>
-                                                <button onClick={() => removeDat(d.id)} className="text-red-400 hover:text-red-300 text-xs">&#x2715;</button>
+                                                <button onClick={() => removeDat(d.id)} className="text-xs" style={{color:'var(--error)'}}>&#x2715;</button>
                                             </div>
                                         ))}
                                     </div>
@@ -1592,42 +1778,43 @@ HTML_TEMPLATE = r'''
                             </div>
 
                             {/* Scan */}
-                            <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-5">
+                            <div className="backdrop-blur rounded-xl p-5" style={{backgroundColor:'var(--surface0)',border:'1px solid var(--surface1)'}}>
                                 <h2 className="font-semibold mb-4 flex items-center gap-2">
-                                    <span className="text-emerald-400">&#128269;</span> Scan ROMs
+                                    <span style={{color:'var(--success)'}}>&#128269;</span> Scan ROMs
                                 </h2>
                                 <div className="flex gap-2 mb-3">
                                     <input type="text" value={romFolder} onChange={e => setRomFolder(e.target.value)}
                                         placeholder="C:\path\to\roms"
-                                        className="flex-1 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-emerald-500 text-sm" />
-                                    <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 bg-emerald-600 hover:bg-emerald-500 rounded-l-none rounded-r-lg" title="Browse folder">Browse</button>
+                                        className="flex-1 px-4 py-2 rounded-lg focus:outline-none text-sm" style={{backgroundColor:'var(--bg-dim)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
+                                    <button onClick={()=>openBrowser('dir', setRomFolder)} className="px-3 rounded-l-none rounded-r-lg" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)'}} title="Browse folder">Browse</button>
                                     <button onClick={startScan} disabled={status.scanning}
-                                        className="ml-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg font-medium transition flex items-center gap-2 text-sm">
+                                        className="ml-2 px-4 py-2 disabled:opacity-50 rounded-lg font-medium transition flex items-center gap-2 text-sm" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)'}}>
                                         {status.scanning && <span className="loader"></span>}
                                         Scan
                                     </button>
                                 </div>
-                                <div className="flex gap-4 mb-3 items-center">
-                                    <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
-                                        <input type="checkbox" checked={scanArchives} onChange={e => setScanArchives(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
+                                <Dropzone label="Drop ROM folders here" onDrop={paths => { if (paths[0]) setRomFolder(paths[0]); }} />
+                                <div className="flex gap-4 mb-3 mt-3 items-center">
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer" style={{color:'var(--subtext0)'}}>
+                                        <input type="checkbox" checked={scanArchives} onChange={e => setScanArchives(e.target.checked)} className="rounded" />
                                         Scan ZIPs
                                     </label>
-                                    <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
-                                        <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded bg-slate-700 border-slate-600" />
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer" style={{color:'var(--subtext0)'}}>
+                                        <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded" />
                                         Recursive
                                     </label>
                                     <input type="text" value={blindmatchSystem} onChange={e => setBlindmatchSystem(e.target.value)}
                                         placeholder="BlindMatch system (optional)" title="BlindMatch system name"
-                                        className="px-3 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-sm min-w-[260px]" />
+                                        className="px-3 py-1.5 rounded text-sm min-w-[260px]" style={{backgroundColor:'var(--bg-dim)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
                                 </div>
                                 {status.scanning && (
                                     <div className="space-y-2">
                                         <div className="flex justify-between text-sm">
-                                            <span className="text-slate-400">Scanning...</span>
-                                            <span className="text-cyan-400">{status.scan_progress?.toLocaleString()} / {status.scan_total?.toLocaleString()}</span>
+                                            <span style={{color:'var(--subtext0)'}}>Scanning...</span>
+                                            <span style={{color:'var(--primary)'}}>{status.scan_progress?.toLocaleString()} / {status.scan_total?.toLocaleString()}</span>
                                         </div>
-                                        <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-                                            <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all" style={{width: `${progress}%`}}></div>
+                                        <div className="w-full h-2 rounded-full overflow-hidden" style={{backgroundColor:'var(--surface1)'}}>
+                                            <div className="h-full transition-all" style={{background:'linear-gradient(to right, var(--primary), var(--secondary))',width: `${progress}%`}}></div>
                                         </div>
                                     </div>
                                 )}
@@ -1636,67 +1823,86 @@ HTML_TEMPLATE = r'''
 
                         {/* ── Stats Bar ── */}
                         {(status.identified_count > 0 || status.unidentified_count > 0) && (
-                            <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-4">
+                            <div className="backdrop-blur rounded-xl p-4" style={{backgroundColor:'var(--surface0)',border:'1px solid var(--surface1)'}}>
                                 <div className="flex flex-wrap items-center gap-6 text-sm">
-                                    <div><span className="text-slate-400">DATs:</span> <span className="font-bold text-cyan-400">{status.dat_count || 0}</span></div>
-                                    <div><span className="text-slate-400">Total Scanned:</span> <span className="font-bold">{((status.identified_count || 0) + (status.unidentified_count || 0)).toLocaleString()}</span></div>
-                                    <div className="flex items-center gap-1"><span className="text-emerald-400">&#10003;</span><span className="text-slate-400">Identified:</span> <span className="font-bold text-emerald-400">{(status.identified_count || 0).toLocaleString()}</span></div>
-                                    <div className="flex items-center gap-1"><span className="text-amber-400">?</span><span className="text-slate-400">Unidentified:</span> <span className="font-bold text-amber-400">{(status.unidentified_count || 0).toLocaleString()}</span></div>
+                                    <div><span style={{color:'var(--subtext0)'}}>DATs:</span> <span className="font-bold" style={{color:'var(--primary)'}}>{status.dat_count || 0}</span></div>
+                                    <div><span style={{color:'var(--subtext0)'}}>Total Scanned:</span> <span className="font-bold">{((status.identified_count || 0) + (status.unidentified_count || 0)).toLocaleString()}</span></div>
+                                    <div className="flex items-center gap-1"><span style={{color:'var(--success)'}}>&#10003;</span><span style={{color:'var(--subtext0)'}}>Identified:</span> <span className="font-bold" style={{color:'var(--success)'}}>{(status.identified_count || 0).toLocaleString()}</span></div>
+                                    <div className="flex items-center gap-1"><span style={{color:'var(--warning)'}}>?</span><span style={{color:'var(--subtext0)'}}>Unidentified:</span> <span className="font-bold" style={{color:'var(--warning)'}}>{(status.unidentified_count || 0).toLocaleString()}</span></div>
                                     {comp.total_in_dat > 0 && (
-                                        <div className="flex items-center gap-1"><span className="text-red-400">&#9888;</span><span className="text-slate-400">Missing:</span> <span className="font-bold text-red-400">{(comp.missing || 0).toLocaleString()}</span><span className="text-slate-500 text-xs ml-1">({comp.percentage?.toFixed(1)}% complete)</span></div>
+                                        <div className="flex items-center gap-1"><span style={{color:'var(--error)'}}>&#9888;</span><span style={{color:'var(--subtext0)'}}>Missing:</span> <span className="font-bold" style={{color:'var(--error)'}}>{(comp.missing || 0).toLocaleString()}</span><span className="text-xs ml-1" style={{color:'var(--overlay1)'}}>({comp.percentage?.toFixed(1)}% complete)</span></div>
                                     )}
                                 </div>
                             </div>
                         )}
 
                         {/* ── Tabs ── */}
-                        <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl overflow-hidden">
-                            <div className="flex border-b border-slate-700">
+                        <div className="backdrop-blur rounded-xl overflow-hidden" style={{backgroundColor:'var(--surface0)',border:'1px solid var(--surface1)'}}>
+                            <div className="flex" style={{borderBottom:'1px solid var(--surface1)'}}>
                                 {[
-                                    { id: 'identified', label: 'Identified', count: results.identified.length, color: 'cyan', badgeBg: 'bg-emerald-900/50', badgeFg: 'text-emerald-400' },
-                                    { id: 'unidentified', label: 'Unidentified', count: results.unidentified.length, color: 'amber', badgeBg: 'bg-amber-900/50', badgeFg: 'text-amber-400' },
-                                    { id: 'missing', label: 'Missing', count: (missing.missing || []).length, color: 'red', badgeBg: 'bg-red-900/50', badgeFg: 'text-red-400' },
+                                    { id: 'identified', label: 'Identified', count: results.identified.length, fg: 'var(--success)', badgeBg: 'rgba(166,227,161,0.15)' },
+                                    { id: 'unidentified', label: 'Unidentified', count: results.unidentified.length, fg: 'var(--warning)', badgeBg: 'rgba(249,226,175,0.15)' },
+                                    { id: 'missing', label: 'Missing', count: (missing.missing || []).length, fg: 'var(--error)', badgeBg: 'rgba(243,139,168,0.15)' },
                                 ].map(tab => (
                                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                                        className={`flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2 ${
-                                            activeTab === tab.id ? `bg-slate-700/50 text-${tab.color}-400 border-b-2 border-${tab.color}-400` : 'text-slate-400 hover:bg-slate-700/30'
-                                        }`}>
+                                        className="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2"
+                                        style={{
+                                            color: activeTab === tab.id ? tab.fg : 'var(--subtext0)',
+                                            backgroundColor: activeTab === tab.id ? 'rgba(69,71,90,0.5)' : 'transparent',
+                                            borderBottom: activeTab === tab.id ? `2px solid ${tab.fg}` : '2px solid transparent',
+                                        }}>
                                         {tab.label}
-                                        <span className={`px-2 py-0.5 ${tab.badgeBg} ${tab.badgeFg} text-xs rounded`}>{tab.count.toLocaleString()}</span>
+                                        <span className="px-2 py-0.5 text-xs rounded" style={{background: tab.badgeBg, color: tab.fg}}>{tab.count.toLocaleString()}</span>
                                     </button>
                                 ))}
                             </div>
 
                             {/* Search + Actions bar */}
-                            <div className="p-4 border-b border-slate-700/50 flex flex-wrap gap-4 items-center">
+                            <div className="p-4 flex flex-wrap gap-4 items-center" style={{borderBottom:'1px solid rgba(69,71,90,0.5)'}}>
                                 <div className="flex-1 min-w-[200px]">
                                     <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                                        className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
+                                        className="w-full px-4 py-2 rounded-lg focus:outline-none text-sm" style={{backgroundColor:'var(--bg-dim)',border:'1px solid var(--surface1)',color:'var(--text)'}} />
                                 </div>
+                                {activeTab === 'identified' && (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setViewMode('list')} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor: viewMode === 'list' ? 'var(--primary)' : 'var(--surface1)', color: viewMode === 'list' ? 'var(--bg-deep)' : 'var(--text)'}}>List</button>
+                                        <button onClick={() => setViewMode('grid')} className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor: viewMode === 'grid' ? 'var(--primary)' : 'var(--surface1)', color: viewMode === 'grid' ? 'var(--bg-deep)' : 'var(--text)'}}>Grid</button>
+                                    </div>
+                                )}
                                 {activeTab === 'unidentified' && (
                                     <button onClick={forceIdentify} disabled={selected.size === 0}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition text-sm">
+                                        className="px-4 py-2 disabled:opacity-50 rounded-lg font-medium transition text-sm" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}}>
                                         Force to Identified ({selected.size})
                                     </button>
                                 )}
                                 {activeTab === 'missing' && (
                                     <div className="flex gap-2">
                                         <button onClick={() => { refreshMissing(); notify('info', 'Missing ROMs refreshed'); }}
-                                            className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Refresh</button>
+                                            className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--surface1)'}}>Refresh</button>
                                         <button onClick={() => setShowArchive(true)}
-                                            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">Search Archive.org</button>
+                                            className="px-3 py-2 rounded-lg text-sm" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}}>Search Archive.org</button>
                                         <button onClick={() => { setDlDest(romFolder || ''); setShowDownloadDialog(true); }}
-                                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">Download Missing (removed)</button>
+                                            className="px-3 py-2 rounded-lg text-sm font-medium" style={{backgroundColor:'var(--success)',color:'var(--bg-deep)'}}>Download Missing (removed)</button>
                                     </div>
                                 )}
                             </div>
 
                             {/* Table content */}
                             <div className="max-h-[450px] overflow-auto">
-                                {activeTab === 'identified' && (
+                                {activeTab === 'identified' && status.scanning && (
+                                    viewMode === 'grid' ? <SkeletonGrid /> : <SkeletonTable />
+                                )}
+                                {activeTab === 'identified' && !status.scanning && viewMode === 'grid' && filteredIdentified.length > 0 && (
+                                    <div style={{display:'flex',flexWrap:'wrap',gap:'16px',padding:'16px'}}>
+                                        {filteredIdentified.map(rom => (
+                                            <PosterCard key={rom.id} rom={rom} />
+                                        ))}
+                                    </div>
+                                )}
+                                {activeTab === 'identified' && !status.scanning && viewMode === 'list' && filteredIdentified.length > 0 && (
                                     <table className="w-full text-sm">
-                                        <thead className="bg-slate-800/80 sticky top-0">
-                                            <tr className="text-left text-slate-400">
+                                        <thead className="sticky top-0" style={{backgroundColor:'var(--surface0)'}}>
+                                            <tr className="text-left" style={{color:'var(--subtext0)'}}>
                                                 <th className="p-3">Original File</th>
                                                 <th className="p-3">ROM Name</th>
                                                 <th className="p-3">Game</th>
@@ -1707,32 +1913,33 @@ HTML_TEMPLATE = r'''
                                                 <th className="p-3">Status</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-700/50">
+                                        <tbody>
                                             {filteredIdentified.map(rom => (
-                                                <tr key={rom.id} className="hover:bg-slate-800/30">
-                                                    <td className="p-3 text-slate-300 max-w-[180px] truncate">{rom.original_file}</td>
-                                                    <td className="p-3 text-cyan-300">{rom.rom_name}</td>
+                                                <tr key={rom.id} style={{borderBottom:'1px solid rgba(69,71,90,0.5)'}}>
+                                                    <td className="p-3 max-w-[180px] truncate" style={{color:'var(--subtext1)'}}>{rom.original_file}</td>
+                                                    <td className="p-3" style={{color:'var(--secondary)'}}>{rom.rom_name}</td>
                                                     <td className="p-3">{rom.game_name}</td>
-                                                    <td className="p-3 text-slate-400">{rom.system}</td>
+                                                    <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.system}</td>
                                                     <td className="p-3"><RegionBadge region={rom.region} /></td>
-                                                    <td className="p-3 text-slate-400">{rom.size_formatted}</td>
-                                                    <td className="p-3 font-mono text-xs text-slate-500">{rom.crc32}</td>
-                                                    <td className="p-3 text-slate-400">{rom.status}</td>
+                                                    <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.size_formatted}</td>
+                                                    <td className="p-3 font-mono text-xs" style={{color:'var(--overlay1)'}}>{rom.crc32}</td>
+                                                    <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.status}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 )}
 
-                                {activeTab === 'unidentified' && (
+                                {activeTab === 'unidentified' && status.scanning && <SkeletonTable />}
+                                {activeTab === 'unidentified' && !status.scanning && filteredUnidentified.length > 0 && (
                                     <table className="w-full text-sm">
-                                        <thead className="bg-slate-800/80 sticky top-0">
-                                            <tr className="text-left text-slate-400">
+                                        <thead className="sticky top-0" style={{backgroundColor:'var(--surface0)'}}>
+                                            <tr className="text-left" style={{color:'var(--subtext0)'}}>
                                                 <th className="p-3 w-10">
                                                     <input type="checkbox" onChange={e => {
                                                         if (e.target.checked) setSelected(new Set(filteredUnidentified.map(f => f.id)));
                                                         else setSelected(new Set());
-                                                    }} className="rounded bg-slate-700" />
+                                                    }} className="rounded" />
                                                 </th>
                                                 <th className="p-3">Filename</th>
                                                 <th className="p-3">Path</th>
@@ -1740,21 +1947,21 @@ HTML_TEMPLATE = r'''
                                                 <th className="p-3">CRC32</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-700/50">
+                                        <tbody>
                                             {filteredUnidentified.map(file => (
-                                                <tr key={file.id} className="hover:bg-slate-800/30">
+                                                <tr key={file.id} style={{borderBottom:'1px solid rgba(69,71,90,0.5)'}}>
                                                     <td className="p-3">
                                                         <input type="checkbox" checked={selected.has(file.id)}
                                                             onChange={e => {
                                                                 const next = new Set(selected);
                                                                 e.target.checked ? next.add(file.id) : next.delete(file.id);
                                                                 setSelected(next);
-                                                            }} className="rounded bg-slate-700" />
+                                                            }} className="rounded" />
                                                     </td>
-                                                    <td className="p-3 text-amber-300 font-mono">{file.filename}</td>
-                                                    <td className="p-3 text-slate-500 max-w-[250px] truncate">{file.path}</td>
-                                                    <td className="p-3 text-slate-400">{file.size_formatted}</td>
-                                                    <td className="p-3 font-mono text-xs text-slate-500">{file.crc32}</td>
+                                                    <td className="p-3 font-mono" style={{color:'var(--warning)'}}>{file.filename}</td>
+                                                    <td className="p-3 max-w-[250px] truncate" style={{color:'var(--overlay1)'}}>{file.path}</td>
+                                                    <td className="p-3" style={{color:'var(--subtext0)'}}>{file.size_formatted}</td>
+                                                    <td className="p-3 font-mono text-xs" style={{color:'var(--overlay1)'}}>{file.crc32}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -1765,20 +1972,21 @@ HTML_TEMPLATE = r'''
                                     <div>
                                         {/* Completeness stats */}
                                         {comp.total_in_dat > 0 && (
-                                            <div className="p-4 bg-slate-900/30 border-b border-slate-700/50">
+                                            <div className="p-4" style={{backgroundColor:'rgba(17,17,27,0.3)',borderBottom:'1px solid rgba(69,71,90,0.5)'}}>
                                                 <div className="flex items-center gap-4 text-sm mb-2">
-                                                    <span className="text-slate-400">Completeness:</span>
+                                                    <span style={{color:'var(--subtext0)'}}>Completeness:</span>
                                                     <span className="font-bold text-lg">{comp.percentage?.toFixed(1)}%</span>
-                                                    <span className="text-slate-500">({comp.found?.toLocaleString()} / {comp.total_in_dat?.toLocaleString()})</span>
+                                                    <span style={{color:'var(--overlay1)'}}>({comp.found?.toLocaleString()} / {comp.total_in_dat?.toLocaleString()})</span>
                                                 </div>
-                                                <div className="w-full h-3 bg-slate-700 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all" style={{width: `${comp.percentage || 0}%`}}></div>
+                                                <div className="w-full h-3 rounded-full overflow-hidden" style={{backgroundColor:'var(--surface1)'}}>
+                                                    <div className="h-full transition-all" style={{background:'linear-gradient(to right, var(--success), var(--primary))',width: `${comp.percentage || 0}%`}}></div>
                                                 </div>
                                             </div>
                                         )}
+                                        {filteredMissing.length > 0 && (
                                         <table className="w-full text-sm">
-                                            <thead className="bg-slate-800/80 sticky top-0">
-                                                <tr className="text-left text-slate-400">
+                                            <thead className="sticky top-0" style={{backgroundColor:'var(--surface0)'}}>
+                                                <tr className="text-left" style={{color:'var(--subtext0)'}}>
                                                     <th className="p-3">ROM Name</th>
                                                     <th className="p-3">Game</th>
                                                     <th className="p-3">System</th>
@@ -1786,38 +1994,39 @@ HTML_TEMPLATE = r'''
                                                     <th className="p-3">Size</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-slate-700/50">
+                                            <tbody>
                                                 {filteredMissing.map((rom, i) => (
-                                                    <tr key={i} className="hover:bg-slate-800/30">
-                                                        <td className="p-3 text-red-300">{rom.rom_name}</td>
+                                                    <tr key={i} style={{borderBottom:'1px solid rgba(69,71,90,0.5)'}}>
+                                                        <td className="p-3" style={{color:'var(--error)'}}>{rom.rom_name}</td>
                                                         <td className="p-3">{rom.game_name}</td>
-                                                        <td className="p-3 text-slate-400">{rom.system}</td>
+                                                        <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.system}</td>
                                                         <td className="p-3"><RegionBadge region={rom.region} /></td>
-                                                        <td className="p-3 text-slate-400">{rom.size_formatted}</td>
+                                                        <td className="p-3" style={{color:'var(--subtext0)'}}>{rom.size_formatted}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
+                                        )}
                                     </div>
                                 )}
 
-                                {/* Empty state */}
-                                {((activeTab === 'identified' && filteredIdentified.length === 0) ||
-                                  (activeTab === 'unidentified' && filteredUnidentified.length === 0) ||
-                                  (activeTab === 'missing' && filteredMissing.length === 0)) && (
-                                    <div className="p-12 text-center text-slate-500">
-                                        <div className="text-4xl mb-2">&#128196;</div>
-                                        <p>No files to display</p>
-                                        <p className="text-sm">{activeTab === 'missing' ? 'Load DATs and scan ROMs to see missing items' : 'Load a DAT and scan your ROMs'}</p>
-                                    </div>
+                                {/* Empty states */}
+                                {activeTab === 'identified' && !status.scanning && filteredIdentified.length === 0 && (
+                                    <EmptyState icon="gamepad" heading="No identified ROMs" subtext="Load a DAT file and scan your ROM folder to identify files." ctaLabel={!status.dat_count ? "Load a DAT first" : null} />
+                                )}
+                                {activeTab === 'unidentified' && !status.scanning && filteredUnidentified.length === 0 && (
+                                    <EmptyState icon="search_off" heading="No unidentified files" subtext={q ? "No results match your search." : "All scanned files were matched, or no scan has been performed yet."} />
+                                )}
+                                {activeTab === 'missing' && filteredMissing.length === 0 && (
+                                    <EmptyState icon="folder_search" heading="No missing ROMs" subtext="Load DATs and scan ROMs to compute missing items." />
                                 )}
                             </div>
                         </div>
 
                         {/* ── Organization ── */}
-                        <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-5">
+                        <div className="backdrop-blur rounded-xl p-5" style={{backgroundColor:'var(--surface0)',border:'1px solid var(--surface1)'}}>
                             <h2 className="font-semibold mb-4 flex items-center gap-2">
-                                <span className="text-amber-400">&#9889;</span> Organization
+                                <span style={{color:'var(--warning)'}}>&#9889;</span> Organization
                             </h2>
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
                                 {[
@@ -1829,55 +2038,64 @@ HTML_TEMPLATE = r'''
                                     { id: 'flat', name: 'Flat', desc: 'Renamed only' },
                                 ].map(s => (
                                     <button key={s.id} onClick={() => setStrategy(s.id)} title={`Use strategy: ${s.name}. ${s.desc}.`}
-                                        className={`p-3 rounded-lg border text-left transition ${
-                                            strategy === s.id ? 'bg-cyan-900/30 border-cyan-500 text-cyan-300' : 'bg-slate-900/30 border-slate-600 hover:border-slate-500'
-                                        }`}>
+                                        className="p-3 rounded-lg text-left transition"
+                                        style={{
+                                            backgroundColor: strategy === s.id ? 'rgba(203,166,247,0.1)' : 'rgba(17,17,27,0.3)',
+                                            border: strategy === s.id ? '1px solid var(--primary)' : '1px solid var(--surface2)',
+                                            color: strategy === s.id ? 'var(--primary)' : 'var(--text)',
+                                        }}>
                                         <div className="font-medium text-sm">{s.name}</div>
-                                        <div className="text-xs text-slate-500">{s.desc}</div>
+                                        <div className="text-xs" style={{color:'var(--overlay1)'}}>{s.desc}</div>
                                     </button>
                                 ))}
                             </div>
                             <div className="flex flex-wrap gap-4 items-end">
                                 <div className="flex-1 min-w-[250px]">
-                                    <label className="block text-sm text-slate-400 mb-2">Output Folder</label>
+                                    <label className="block text-sm mb-2" style={{color:'var(--subtext0)'}}>Output Folder</label>
                                     <div className="flex gap-2">
                                         <input type="text" value={outputFolder} onChange={e => setOutputFolder(e.target.value)}
                                             placeholder="C:\path\to\output"
-                                            className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg focus:outline-none focus:border-cyan-500 text-sm" />
-                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 bg-blue-600 hover:bg-blue-500 rounded text-sm" title="Choose the output folder for organized files">Browse</button>
+                                            className="w-full px-4 py-2 rounded-lg focus:outline-none text-sm" style={{backgroundColor:'var(--bg-dim)',border:'1px solid var(--surface2)',color:'var(--text)'}} />
+                                        <button onClick={()=>openBrowser('dir', setOutputFolder)} className="px-3 rounded text-sm" style={{backgroundColor:'var(--secondary)',color:'var(--bg-deep)'}} title="Choose the output folder for organized files">Browse</button>
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm text-slate-400 mb-2">Action</label>
+                                    <label className="block text-sm mb-2" style={{color:'var(--subtext0)'}}>Action</label>
                                     <div className="flex gap-2">
                                         <button onClick={() => setAction('copy')} title="Copy files to output and keep originals"
-                                            className={`px-4 py-2 rounded-lg border transition text-sm ${
-                                                action === 'copy' ? 'bg-blue-900/30 border-blue-500 text-blue-300' : 'bg-slate-900/30 border-slate-600'
-                                            }`}>Copy</button>
+                                            className="px-4 py-2 rounded-lg transition text-sm"
+                                            style={{
+                                                backgroundColor: action === 'copy' ? 'rgba(137,180,250,0.15)' : 'rgba(17,17,27,0.3)',
+                                                border: action === 'copy' ? '1px solid var(--secondary)' : '1px solid var(--surface2)',
+                                                color: action === 'copy' ? 'var(--secondary)' : 'var(--text)',
+                                            }}>Copy</button>
                                         <button onClick={() => setAction('move')} title="Move files to output and remove originals"
-                                            className={`px-4 py-2 rounded-lg border transition text-sm ${
-                                                action === 'move' ? 'bg-amber-900/30 border-amber-500 text-amber-300' : 'bg-slate-900/30 border-slate-600'
-                                            }`}>Move</button>
+                                            className="px-4 py-2 rounded-lg transition text-sm"
+                                            style={{
+                                                backgroundColor: action === 'move' ? 'rgba(249,226,175,0.15)' : 'rgba(17,17,27,0.3)',
+                                                border: action === 'move' ? '1px solid var(--warning)' : '1px solid var(--surface2)',
+                                                color: action === 'move' ? 'var(--warning)' : 'var(--text)',
+                                            }}>Move</button>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={previewOrganize} disabled={results.identified.length === 0} title="Show destination preview before organizing"
-                                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg font-medium transition text-sm">
+                                        className="px-4 py-2 disabled:opacity-50 rounded-lg font-medium transition text-sm" style={{backgroundColor:'var(--surface1)'}}>
                                         Preview
                                     </button>
                                     <button onClick={doOrganize} disabled={results.identified.length === 0} title="Execute organization now"
-                                        className="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 rounded-lg font-medium transition shadow-lg shadow-cyan-900/30 text-sm">
+                                        className="px-6 py-2 disabled:opacity-50 rounded-lg font-medium transition text-sm" style={{background:'linear-gradient(135deg, var(--primary), var(--secondary))',color:'var(--bg-deep)',boxShadow:'0 4px 16px rgba(203,166,247,0.3)'}}>
                                         Organize!
                                     </button>
                                     <button onClick={undoOrganize} title="Undo the most recent organization operation"
-                                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium transition text-sm">
+                                        className="px-4 py-2 rounded-lg font-medium transition text-sm" style={{backgroundColor:'var(--surface1)'}}>
                                         Undo
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        <p className="text-center text-slate-500 text-sm">
+                        <p className="text-center text-sm" style={{color:'var(--overlay1)'}}>
                             R0MM ver 0.30rc &mdash; Supports No-Intro, Redump, TOSEC and any XML-based DAT files
                         </p>
                     </div>
@@ -1885,7 +2103,7 @@ HTML_TEMPLATE = r'''
             );
         }
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<ToastProvider><App /></ToastProvider>);
     {% endraw %}
     </script>
 </body>

@@ -191,6 +191,18 @@ _TRANSLATIONS = {
         "copy_crc32": "Copy CRC32",
         "move_to_missing_confirm": "Move {count} unidentified item(s) to Missing ROMs?",
         "flet_no_identified_to_organize": "No identified ROMs to organize.",
+        # Empty states
+        "empty_no_dats_heading": "No DAT files loaded",
+        "empty_no_dats_subtext": "Import a DAT file to start identifying your ROMs",
+        "empty_no_dats_cta": "Import DAT",
+        "empty_no_scan_heading": "No ROMs scanned yet",
+        "empty_no_scan_subtext": "Point to your ROM folder to begin scanning",
+        "empty_no_scan_cta": "Scan ROMs",
+        "empty_no_results_heading": "No matches found",
+        "empty_no_results_subtext": "Try adjusting your search or loading different DATs",
+        "empty_identified_subtext": "Load a DAT and scan your ROMs to see identified matches",
+        "empty_unidentified_subtext": "Load a DAT and scan your ROMs to see unidentified files",
+        "empty_missing_subtext": "Load DATs and scan ROMs to see missing items",
     },
     LANG_PT_BR: {
         "menu_file": "Arquivo",
@@ -375,6 +387,18 @@ _TRANSLATIONS = {
         "copy_crc32": "Copiar CRC32",
         "move_to_missing_confirm": "Mover {count} item(ns) não identificados para ROMs Faltantes?",
         "flet_no_identified_to_organize": "Nenhuma ROM identificada para organizar.",
+        # Empty states
+        "empty_no_dats_heading": "Nenhum arquivo DAT carregado",
+        "empty_no_dats_subtext": "Importe um arquivo DAT para identificar suas ROMs",
+        "empty_no_dats_cta": "Importar DAT",
+        "empty_no_scan_heading": "Nenhuma ROM escaneada",
+        "empty_no_scan_subtext": "Aponte para a pasta de ROMs para iniciar o escaneamento",
+        "empty_no_scan_cta": "Escanear ROMs",
+        "empty_no_results_heading": "Nenhum resultado encontrado",
+        "empty_no_results_subtext": "Tente ajustar a busca ou carregar outros DATs",
+        "empty_identified_subtext": "Carregue um DAT e escaneie suas ROMs para ver identificadas",
+        "empty_unidentified_subtext": "Carregue um DAT e escaneie suas ROMs para ver arquivos",
+        "empty_missing_subtext": "Carregue DATs e escaneie ROMs para ver itens faltantes",
     },
 }
 

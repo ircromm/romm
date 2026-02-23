@@ -10,3 +10,6 @@ flask>=2.0.0
 requests>=2.28.0
 
 # Note: tkinter is usually included with Python (legacy GUI, use --gui flag)
+
+# Async HTTP for thumbnail downloads (optional)
+aiohttp>=3.9.0
