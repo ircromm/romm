@@ -1,0 +1,98 @@
+{
+  "fs_8942f1c4df5c": {
+    "id": "fs_8942f1c4df5c",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\Nintendo - Super Nintendo Entertainment System\\Nintendo - Super Nintendo Entertainment System.dat",
+    "name": "Nintendo - Super Nintendo Entertainment System",
+    "description": "Nintendo - Super Nintendo Entertainment System",
+    "version": "2026.01.17",
+    "system_name": "Nintendo - Super Nintendo Entertainment System",
+    "rom_count": 4215,
+    "imported_at": "2026-02-28T18:19:32.769553",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "fs_0c8399b5a4a7": {
+    "id": "fs_0c8399b5a4a7",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_downloads\\Nintendo - Game Boy.dat",
+    "name": "Nintendo - Game Boy",
+    "description": "Nintendo - Game Boy",
+    "version": "2026.01.17",
+    "system_name": "Nintendo - Game Boy",
+    "rom_count": 2187,
+    "imported_at": "2026-02-28T18:19:32.986882",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "fs_b1db04c652ca": {
+    "id": "fs_b1db04c652ca",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_downloads\\Nintendo - Super Nintendo Entertainment System.dat",
+    "name": "Nintendo - Super Nintendo Entertainment System",
+    "description": "Nintendo - Super Nintendo Entertainment System",
+    "version": "2026.01.17",
+    "system_name": "Nintendo - Super Nintendo Entertainment System",
+    "rom_count": 4215,
+    "imported_at": "2026-02-28T18:19:33.421227",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "fs_215e92366c01": {
+    "id": "fs_215e92366c01",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_downloads\\Sega - Dreamcast.dat",
+    "name": "Sega - Dreamcast",
+    "description": "Sega - Dreamcast",
+    "version": "2026.01.17",
+    "system_name": "Sega - Dreamcast",
+    "rom_count": 1856,
+    "imported_at": "2026-02-28T18:19:33.676768",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "fs_b8772d20e5ed": {
+    "id": "fs_b8772d20e5ed",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_downloads\\Sega - Mega Drive - Genesis.dat",
+    "name": "Sega - Mega Drive - Genesis",
+    "description": "Sega - Mega Drive - Genesis",
+    "version": "2026.01.17",
+    "system_name": "Sega - Mega Drive - Genesis",
+    "rom_count": 3267,
+    "imported_at": "2026-02-28T18:19:34.115149",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "fs_ee64050ccb5b": {
+    "id": "fs_ee64050ccb5b",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_local\\R0MM - Local Overrides.xml",
+    "name": "R0MM - Local Overrides",
+    "description": "User-curated DAT overrides created by R0MM.",
+    "version": "2026.02.27",
+    "system_name": "R0MM - Local Overrides",
+    "rom_count": 0,
+    "imported_at": "2026-02-28T18:19:34.136457",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "36a42ba2": {
+    "id": "36a42ba2",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_downloads\\Sony - PlayStation.dat",
+    "name": "Sony - PlayStation",
+    "description": "Sony - PlayStation",
+    "version": "2026.01.17",
+    "system_name": "Sony - PlayStation",
+    "rom_count": 13489,
+    "imported_at": "2026-02-28T18:23:08.192207",
+    "is_valid": true,
+    "parse_error": ""
+  },
+  "fs_178b45e901bb": {
+    "id": "fs_178b45e901bb",
+    "filepath": "D:\\_r0mm\\r0mm\\data\\dats\\_downloads\\Sony - PlayStation-1.dat",
+    "name": "Sony - PlayStation",
+    "description": "Sony - PlayStation",
+    "version": "2026.01.17",
+    "system_name": "Sony - PlayStation",
+    "rom_count": 13489,
+    "imported_at": "2026-02-28T18:23:11.380350",
+    "is_valid": true,
+    "parse_error": ""
+  }
+}

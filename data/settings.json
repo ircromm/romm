@@ -1,0 +1,178 @@
+{
+  "active_profile": "retroarch_frontend",
+  "language": "en",
+  "theme": "dark",
+  "ui_state": {
+    "pyside6": {
+      "main": {
+        "geometry_b64": "AdnQywADAAAAAAAA////+QAAB/8AAARPAAABgAAAAMAAAAZ/AAADvwAAAAACAAAACAAAAAAAAAAAFwAAB/8AAARP",
+        "active_view": 2,
+        "search_text": "",
+        "language": "en",
+        "last_collection_path": ""
+      },
+      "library": {
+        "tab_index": 0,
+        "splitter_sizes": [
+          1392,
+          400
+        ]
+      },
+      "import_scan": {
+        "rom_folder": "D:/_roms",
+        "scan_archives": true,
+        "recursive": true,
+        "blindmatch_enabled": false,
+        "blindmatch_system": "",
+        "output_folder": "D:/_roms/r0mm",
+        "action_index": 1,
+        "strategies": [
+          "1g1r",
+          "system"
+        ]
+      },
+      "downloads": {
+        "tab_index": 0,
+        "torrent_query": "",
+        "torrent_provider": "apibay",
+        "torrent_provider_url": "",
+        "download_output": "",
+        "download_base_url": "",
+        "download_urls": "",
+        "jd_autostart": false,
+        "direct_splitter_sizes": [
+          189,
+          287
+        ]
+      }
+    }
+  },
+  "accessibility": {
+    "font_scale": 1.0,
+    "high_contrast": false,
+    "dense_tables": false,
+    "reduced_motion": false
+  },
+  "collection_profiles": {
+    "historical_preservation": {
+      "strategy": "museum",
+      "region_priority": [
+        "Japan",
+        "USA",
+        "Europe",
+        "World",
+        "Unknown"
+      ],
+      "allow_tags": [
+        "Rev",
+        "Proto",
+        "Beta"
+      ],
+      "exclude_tags": [
+        "Hack"
+      ],
+      "naming_template": "{game} ({region})",
+      "keep_name_tags": false
+    },
+    "mister_playset": {
+      "strategy": "system+1g1r",
+      "region_priority": [
+        "USA",
+        "Europe",
+        "Japan",
+        "World",
+        "Unknown"
+      ],
+      "allow_tags": [
+        "Rev"
+      ],
+      "exclude_tags": [
+        "Proto",
+        "Beta",
+        "Hack"
+      ],
+      "naming_template": "{game}",
+      "keep_name_tags": false
+    },
+    "retroarch_frontend": {
+      "strategy": "alphabetical",
+      "region_priority": [
+        "USA",
+        "World",
+        "Europe",
+        "Japan",
+        "Unknown"
+      ],
+      "allow_tags": [
+        "Rev"
+      ],
+      "exclude_tags": [
+        "Proto",
+        "Beta",
+        "Hack"
+      ],
+      "naming_template": "{game} ({region})",
+      "keep_name_tags": false
+    },
+    "full_set_no_hacks": {
+      "strategy": "system",
+      "region_priority": [
+        "USA",
+        "Europe",
+        "Japan",
+        "World",
+        "Unknown"
+      ],
+      "allow_tags": [
+        "Rev",
+        "Alt"
+      ],
+      "exclude_tags": [
+        "Hack"
+      ],
+      "naming_template": "{name}",
+      "keep_name_tags": true
+    }
+  },
+  "region_policy": {
+    "global_priority": [
+      "USA",
+      "World",
+      "Europe",
+      "Japan",
+      "Brazil",
+      "Korea",
+      "Unknown"
+    ],
+    "per_system": {},
+    "allow_tags": [
+      "Rev",
+      "Alt"
+    ],
+    "exclude_tags": [
+      "Hack"
+    ]
+  },
+  "naming": {
+    "template": "{name}",
+    "keep_tags": true
+  },
+  "metadata": {
+    "enabled": false,
+    "db_path": ""
+  },
+  "audit": {
+    "enabled": true,
+    "level": "normal",
+    "path": "/mnt/data/r0mmproj/data/logs/audit.log"
+  },
+  "health": {
+    "enabled": true,
+    "warn_on_duplicates": true,
+    "warn_on_unknown_ext": true
+  },
+  "museum_mode": {
+    "enabled": false,
+    "taxonomy": "generation"
+  }
+}
